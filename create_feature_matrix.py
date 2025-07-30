@@ -10,8 +10,8 @@ def create_feature_matrix():
     print("Creating feature matrix for Solana price prediction...")
     print("=" * 60)
     
-    # Step 1: Create date range from July 20, 2023 to July 14, 2025
-    start_date = datetime(2023, 7, 20)
+    # Step 1: Create date range from July 23, 2023 to July 14, 2025
+    start_date = datetime(2023, 7, 23)
     end_date = datetime(2025, 7, 14)
     
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -64,6 +64,24 @@ def create_feature_matrix():
     # Step 3.4: Calculate 14-day RSI (Relative Strength Index)
     sol_data['sol_rsi_14'] = ta.momentum.RSIIndicator(close=sol_data['Close'], window=14).rsi()
     
+    # Step 3.5: Calculate MACD histogram (12/26/9 standard parameters)
+    macd = ta.trend.MACD(close=sol_data['Close'], window_slow=26, window_fast=12, window_sign=9)
+    sol_data['sol_macd_histogram'] = macd.macd_diff()
+    
+    # Step 3.6: Calculate Simple Moving Averages
+    sol_data['sol_sma_7'] = sol_data['Close'].rolling(window=7).mean()
+    sol_data['sol_sma_14'] = sol_data['Close'].rolling(window=14).mean()
+    
+    # Step 3.7: Calculate SMA-based features
+    # Feature 1: sol_close / sol_sma_7
+    sol_data['sol_close_sma7_ratio'] = sol_data['Close'] / sol_data['sol_sma_7']
+    
+    # Feature 2: sol_sma_7 / sol_sma_14
+    sol_data['sol_sma7_sma14_ratio'] = sol_data['sol_sma_7'] / sol_data['sol_sma_14']
+    
+    # Feature 3: % difference from SMA7
+    sol_data['sol_price_dev_from_sma7'] = (sol_data['Close'] - sol_data['sol_sma_7']) / sol_data['sol_sma_7']
+    
     # Step 4: Calculate next-day target variable
     # Shift returns by -1 to get next day's return for prediction
     sol_data['next_day_return'] = sol_data['sol_return_1d'].shift(-1)
@@ -82,13 +100,16 @@ def create_feature_matrix():
     
     sol_data['target_next_day'] = sol_data['next_day_return'].apply(classify_movement)
     
+    # Step 4.1: Calculate rolling mean of previous 2 days' target values (with shift to prevent leakage)
+    sol_data['target_next_day_rolling_mean_2d'] = sol_data['target_next_day'].shift(1).rolling(window=2).mean()
+    
     # Step 5: Merge with feature matrix
     # Convert date column to datetime for merging
     feature_matrix['date_dt'] = pd.to_datetime(feature_matrix['date'])
     
     # Merge SOL data with feature matrix
     feature_matrix = feature_matrix.merge(
-        sol_data[['Date', 'Close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_rsi_14', 'target_next_day']], 
+        sol_data[['Date', 'Close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day', 'target_next_day_rolling_mean_2d']], 
         left_on='date_dt', 
         right_on='Date', 
         how='left'
@@ -125,7 +146,7 @@ def create_feature_matrix():
     feature_matrix['sol_price_relative_to_eth'] = feature_matrix['sol_close'] / feature_matrix['eth_close']
     
     # Reorder columns to put relative prices after returns and before target
-    column_order = ['date', 'sol_close', 'btc_close', 'eth_close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'target_next_day']
+    column_order = ['date', 'sol_close', 'btc_close', 'eth_close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day_rolling_mean_2d', 'target_next_day']
     feature_matrix = feature_matrix[column_order]
     
     # Step 6: Display summary statistics
@@ -141,7 +162,12 @@ def create_feature_matrix():
     print(f"SOL/BTC ratio calculated: {feature_matrix['sol_price_relative_to_btc'].notna().sum()} days")
     print(f"SOL/ETH ratio calculated: {feature_matrix['sol_price_relative_to_eth'].notna().sum()} days")
     print(f"14-day RSI calculated: {feature_matrix['sol_rsi_14'].notna().sum()} days")
+    print(f"MACD histogram calculated: {feature_matrix['sol_macd_histogram'].notna().sum()} days")
+    print(f"SMA close/7d ratio calculated: {feature_matrix['sol_close_sma7_ratio'].notna().sum()} days")
+    print(f"SMA 7d/14d ratio calculated: {feature_matrix['sol_sma7_sma14_ratio'].notna().sum()} days")
+    print(f"Price deviation from SMA7 calculated: {feature_matrix['sol_price_dev_from_sma7'].notna().sum()} days")
     print(f"Target variable available: {feature_matrix['target_next_day'].notna().sum()} days")
+    print(f"Target 2d rolling mean calculated: {feature_matrix['target_next_day_rolling_mean_2d'].notna().sum()} days")
     
     print("\nTarget variable distribution:")
     target_counts = feature_matrix['target_next_day'].value_counts().sort_index()
@@ -175,6 +201,20 @@ def create_feature_matrix():
     print(f"\nTechnical indicator statistics:")
     print("14-day RSI:")
     print(feature_matrix['sol_rsi_14'].describe())
+    print("\nMACD histogram:")
+    print(feature_matrix['sol_macd_histogram'].describe())
+    
+    print(f"\nSMA-based feature statistics:")
+    print("SOL Close/SMA7 ratio:")
+    print(feature_matrix['sol_close_sma7_ratio'].describe())
+    print("\nSMA7/SMA14 ratio:")
+    print(feature_matrix['sol_sma7_sma14_ratio'].describe())
+    print("\nSOL price deviation from SMA7:")
+    print(feature_matrix['sol_price_dev_from_sma7'].describe())
+    
+    print(f"\nTarget-based feature statistics:")
+    print("Target 2d rolling mean:")
+    print(feature_matrix['target_next_day_rolling_mean_2d'].describe())
     
     # Step 7: Save the feature matrix
     output_file = 'feature_matrix.csv'
@@ -182,8 +222,8 @@ def create_feature_matrix():
     print(f"\n✓ Feature matrix saved to: {output_file}")
     
     # Display first few rows
-    print(f"\nFirst 2 rows of feature matrix:")
-    print(feature_matrix.head(2).to_string(index=False))
+    print(f"\nFirst row of feature matrix:")
+    print(feature_matrix.head(1).to_string(index=False))
     
     return feature_matrix
 
