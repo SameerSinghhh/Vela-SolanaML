@@ -52,27 +52,41 @@ def create_feature_matrix():
     # Step 3: Calculate 1-day returns (percentage change from previous close)
     sol_data['sol_return_1d'] = sol_data['Close'].pct_change() * 100
     
+    # Step 3.0: Calculate ACTUAL next-day return (what actually happens the next day)
+    # This is what we would gain/lose if we traded based on today's prediction
+    sol_data['sol_actual_next_day_return'] = sol_data['Close'].pct_change().shift(-1) * 100
+    
     # Step 3.1: Calculate 3-day returns (percentage change from 3 days ago)
     sol_data['sol_return_3d'] = sol_data['Close'].pct_change(periods=3) * 100
     
     # Step 3.2: Calculate 7-day returns (percentage change from 7 days ago)
     sol_data['sol_return_7d'] = sol_data['Close'].pct_change(periods=7) * 100
     
-    # Step 3.3: Calculate 7-day volatility (rolling standard deviation of daily returns)
+    # Step 3.3: Calculate BTC returns
+    btc_data['btc_return_1d'] = btc_data['Close'].pct_change() * 100
+    btc_data['btc_return_3d'] = btc_data['Close'].pct_change(periods=3) * 100
+    btc_data['btc_return_7d'] = btc_data['Close'].pct_change(periods=7) * 100
+    
+    # Step 3.4: Calculate ETH returns
+    eth_data['eth_return_1d'] = eth_data['Close'].pct_change() * 100
+    eth_data['eth_return_3d'] = eth_data['Close'].pct_change(periods=3) * 100
+    eth_data['eth_return_7d'] = eth_data['Close'].pct_change(periods=7) * 100
+    
+    # Step 3.5: Calculate 7-day volatility (rolling standard deviation of daily returns)
     sol_data['sol_volatility_7d'] = sol_data['sol_return_1d'].rolling(window=7).std()
     
-    # Step 3.4: Calculate 14-day RSI (Relative Strength Index)
+    # Step 3.6: Calculate 14-day RSI (Relative Strength Index)
     sol_data['sol_rsi_14'] = ta.momentum.RSIIndicator(close=sol_data['Close'], window=14).rsi()
     
-    # Step 3.5: Calculate MACD histogram (12/26/9 standard parameters)
+    # Step 3.7: Calculate MACD histogram (12/26/9 standard parameters)
     macd = ta.trend.MACD(close=sol_data['Close'], window_slow=26, window_fast=12, window_sign=9)
     sol_data['sol_macd_histogram'] = macd.macd_diff()
     
-    # Step 3.6: Calculate Simple Moving Averages
+    # Step 3.8: Calculate Simple Moving Averages
     sol_data['sol_sma_7'] = sol_data['Close'].rolling(window=7).mean()
     sol_data['sol_sma_14'] = sol_data['Close'].rolling(window=14).mean()
     
-    # Step 3.7: Calculate SMA-based features
+    # Step 3.9: Calculate SMA-based features
     # Feature 1: sol_close / sol_sma_7
     sol_data['sol_close_sma7_ratio'] = sol_data['Close'] / sol_data['sol_sma_7']
     
@@ -109,24 +123,24 @@ def create_feature_matrix():
     
     # Merge SOL data with feature matrix
     feature_matrix = feature_matrix.merge(
-        sol_data[['Date', 'Close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day', 'target_next_day_rolling_mean_2d']], 
+        sol_data[['Date', 'Close', 'sol_actual_next_day_return', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day', 'target_next_day_rolling_mean_2d']], 
         left_on='date_dt', 
         right_on='Date', 
         how='left'
     )
     
-    # Merge BTC closing prices
+    # Merge BTC closing prices and returns
     feature_matrix = feature_matrix.merge(
-        btc_data[['Date', 'Close']], 
+        btc_data[['Date', 'Close', 'btc_return_1d', 'btc_return_3d', 'btc_return_7d']], 
         left_on='date_dt', 
         right_on='Date', 
         how='left',
         suffixes=('', '_btc')
     )
     
-    # Merge ETH closing prices
+    # Merge ETH closing prices and returns
     feature_matrix = feature_matrix.merge(
-        eth_data[['Date', 'Close']], 
+        eth_data[['Date', 'Close', 'eth_return_1d', 'eth_return_3d', 'eth_return_7d']], 
         left_on='date_dt', 
         right_on='Date', 
         how='left',
@@ -145,19 +159,26 @@ def create_feature_matrix():
     feature_matrix['sol_price_relative_to_btc'] = feature_matrix['sol_close'] / feature_matrix['btc_close']
     feature_matrix['sol_price_relative_to_eth'] = feature_matrix['sol_close'] / feature_matrix['eth_close']
     
-    # Reorder columns to put relative prices after returns and before target
-    column_order = ['date', 'sol_close', 'btc_close', 'eth_close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day_rolling_mean_2d', 'target_next_day']
+    # Reorder columns to group all 1d, 3d, 7d returns together
+    column_order = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'sol_return_1d', 'btc_return_1d', 'eth_return_1d', 'sol_return_3d', 'btc_return_3d', 'eth_return_3d', 'sol_return_7d', 'btc_return_7d', 'eth_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day_rolling_mean_2d', 'target_next_day']
     feature_matrix = feature_matrix[column_order]
     
     # Step 6: Display summary statistics
     print("\nFeature Matrix Summary:")
     print(f"Total rows: {len(feature_matrix)}")
     print(f"SOL price data available: {feature_matrix['sol_close'].notna().sum()} days")
+    print(f"SOL actual next day returns: {feature_matrix['sol_actual_next_day_return'].notna().sum()} days")
     print(f"BTC price data available: {feature_matrix['btc_close'].notna().sum()} days")
     print(f"ETH price data available: {feature_matrix['eth_close'].notna().sum()} days")
-    print(f"1-day returns calculated: {feature_matrix['sol_return_1d'].notna().sum()} days")
-    print(f"3-day returns calculated: {feature_matrix['sol_return_3d'].notna().sum()} days")
-    print(f"7-day returns calculated: {feature_matrix['sol_return_7d'].notna().sum()} days")
+    print(f"SOL 1-day returns calculated: {feature_matrix['sol_return_1d'].notna().sum()} days")
+    print(f"BTC 1-day returns calculated: {feature_matrix['btc_return_1d'].notna().sum()} days")
+    print(f"ETH 1-day returns calculated: {feature_matrix['eth_return_1d'].notna().sum()} days")
+    print(f"SOL 3-day returns calculated: {feature_matrix['sol_return_3d'].notna().sum()} days")
+    print(f"BTC 3-day returns calculated: {feature_matrix['btc_return_3d'].notna().sum()} days")
+    print(f"ETH 3-day returns calculated: {feature_matrix['eth_return_3d'].notna().sum()} days")
+    print(f"SOL 7-day returns calculated: {feature_matrix['sol_return_7d'].notna().sum()} days")
+    print(f"BTC 7-day returns calculated: {feature_matrix['btc_return_7d'].notna().sum()} days")
+    print(f"ETH 7-day returns calculated: {feature_matrix['eth_return_7d'].notna().sum()} days")
     print(f"7-day volatility calculated: {feature_matrix['sol_volatility_7d'].notna().sum()} days")
     print(f"SOL/BTC ratio calculated: {feature_matrix['sol_price_relative_to_btc'].notna().sum()} days")
     print(f"SOL/ETH ratio calculated: {feature_matrix['sol_price_relative_to_eth'].notna().sum()} days")
@@ -183,12 +204,26 @@ def create_feature_matrix():
         print(f"  {label}: {count} days")
     
     print(f"\nReturn statistics:")
-    print("1-day returns:")
+    print("Actual next-day returns (for trading simulation):")
+    print(feature_matrix['sol_actual_next_day_return'].describe())
+    print("\nSOL 1-day returns:")
     print(feature_matrix['sol_return_1d'].describe())
-    print("\n3-day returns:")
+    print("\nBTC 1-day returns:")
+    print(feature_matrix['btc_return_1d'].describe())
+    print("\nETH 1-day returns:")
+    print(feature_matrix['eth_return_1d'].describe())
+    print("\nSOL 3-day returns:")
     print(feature_matrix['sol_return_3d'].describe())
-    print("\n7-day returns:")
+    print("\nBTC 3-day returns:")
+    print(feature_matrix['btc_return_3d'].describe())
+    print("\nETH 3-day returns:")
+    print(feature_matrix['eth_return_3d'].describe())
+    print("\nSOL 7-day returns:")
     print(feature_matrix['sol_return_7d'].describe())
+    print("\nBTC 7-day returns:")
+    print(feature_matrix['btc_return_7d'].describe())
+    print("\nETH 7-day returns:")
+    print(feature_matrix['eth_return_7d'].describe())
     print("\n7-day volatility:")
     print(feature_matrix['sol_volatility_7d'].describe())
     

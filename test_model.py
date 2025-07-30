@@ -34,9 +34,9 @@ def advanced_model_test():
     # Step 2: Prepare features and target
     print("\n🔧 Preparing data...")
     
-    # Select feature columns (exclude date, raw prices, and target columns)
-    # Only use features starting from sol_return_1d onwards (no raw price levels)
-    exclude_cols = ['date', 'sol_close', 'btc_close', 'eth_close', 'target_next_day']
+    # Select feature columns (exclude date, raw prices, future-looking data, and target columns)
+    # Only use features starting from sol_return_1d onwards (no raw price levels or forward-looking data)
+    exclude_cols = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'target_next_day']
     feature_cols = [col for col in df_work.columns if col not in exclude_cols]
     
     X = df_work[feature_cols].copy()
@@ -472,36 +472,19 @@ def advanced_model_test():
         test_targets = y_test.values
         predictions = best_model_info['predictions']
         
-        # Calculate actual next-day returns for test period
-        # For simulation, we use the actual target values as the realized returns
-        # Convert target classes back to approximate returns
-        def target_to_return(target):
-            """Convert target class to approximate return for simulation"""
-            if target == 1:  # UP (>+2%)
-                return 0.03  # Assume average 3% gain
-            elif target == -1:  # DOWN (<-2%)
-                return -0.03  # Assume average 3% loss
-            else:  # NEUTRAL
-                return 0.001  # Small positive drift
-        
-        # Get actual returns from the original feature matrix
-        # We'll use sol_return_1d shifted by 1 to get next-day returns
+        # Get ACTUAL next-day returns from the feature matrix
+        # Use the sol_actual_next_day_return column which contains the real market returns
         test_indices = X_test.index
-        actual_returns = []
+        actual_returns = df_work.iloc[test_indices]['sol_actual_next_day_return'].values / 100  # Convert % to decimal
         
-        for idx in test_indices:
-            if idx + 1 < len(df_work):
-                next_day_return = df_work.iloc[idx + 1]['sol_return_1d'] / 100  # Convert % to decimal
-                actual_returns.append(next_day_return)
-            else:
-                actual_returns.append(0)  # Last day, no next day return
-        
-        actual_returns = np.array(actual_returns)
+        # Handle any NaN values (last day won't have next day return)
+        actual_returns = np.nan_to_num(actual_returns, nan=0.0)
         
         print(f"📊 Simulation Setup:")
         print(f"  Test period: {len(test_dates)} trading days")
         print(f"  Initial capital: $10,000")
         print(f"  Transaction cost: 0.1% per trade")
+        print(f"  Using ACTUAL market returns (not simulated)")
         
         # Trading Strategy Simulation
         initial_capital = 10000
