@@ -49,6 +49,22 @@ def create_feature_matrix():
     
     print(f"ETH data loaded: {len(eth_data)} records from {eth_data['Date'].min().date()} to {eth_data['Date'].max().date()}")
     
+    # Step 2.3: Load DXY price data
+    print("Loading DXY price data...")
+    dxy_data = pd.read_csv('price_data/price_data_dxy.csv')
+    dxy_data['Date'] = pd.to_datetime(dxy_data['Date'])
+    dxy_data = dxy_data.sort_values('Date').reset_index(drop=True)
+    
+    print(f"DXY data loaded: {len(dxy_data)} records from {dxy_data['Date'].min().date()} to {dxy_data['Date'].max().date()}")
+    
+    # Step 2.4: Load VIX price data
+    print("Loading VIX price data...")
+    vix_data = pd.read_csv('price_data/price_data_vix.csv')
+    vix_data['Date'] = pd.to_datetime(vix_data['Date'])
+    vix_data = vix_data.sort_values('Date').reset_index(drop=True)
+    
+    print(f"VIX data loaded: {len(vix_data)} records from {vix_data['Date'].min().date()} to {vix_data['Date'].max().date()}")
+    
     # Step 3: Calculate 1-day returns (percentage change from previous close)
     sol_data['sol_return_1d'] = sol_data['Close'].pct_change() * 100
     
@@ -100,22 +116,96 @@ def create_feature_matrix():
     # Shift returns by -1 to get next day's return for prediction
     sol_data['next_day_return'] = sol_data['sol_return_1d'].shift(-1)
     
-    # Create target variable based on next day's return
-    # -1: down (< -2%), 0: neutral (-2% to +2%), 1: up (> +2%)
+    # Create binary target variable based on next day's return
+    # -1: down (< 0%), 1: up (>= 0%) - NO NEUTRAL CLASS
     def classify_movement(return_pct):
         if pd.isna(return_pct):
             return np.nan
-        elif return_pct > 2.0:
-            return 1  # Up
-        elif return_pct < -2.0:
-            return -1  # Down
+        elif return_pct >= 0.0:
+            return 1  # Up (any positive return)
         else:
-            return 0  # Neutral
+            return -1  # Down (any negative return)
     
     sol_data['target_next_day'] = sol_data['next_day_return'].apply(classify_movement)
     
     # Step 4.1: Calculate rolling mean of previous 2 days' target values (with shift to prevent leakage)
     sol_data['target_next_day_rolling_mean_2d'] = sol_data['target_next_day'].shift(1).rolling(window=2).mean()
+    
+    # Step 4.2: Create FEDFUNDS data
+    print("Creating FEDFUNDS interest rate data...")
+    
+    # Known FEDFUNDS data points (monthly observations)
+    fedfunds_data = {
+        '2023-07-01': 5.12,
+        '2023-08-01': 5.33,
+        '2023-09-01': 5.33,
+        '2023-10-01': 5.33,
+        '2023-11-01': 5.33,
+        '2023-12-01': 5.33,
+        '2024-01-01': 5.33,
+        '2024-02-01': 5.33,
+        '2024-03-01': 5.33,
+        '2024-04-01': 5.33,
+        '2024-05-01': 5.33,
+        '2024-06-01': 5.33,
+        '2024-07-01': 5.33,
+        '2024-08-01': 5.33,
+        '2024-09-01': 5.13,  # Start of decline
+        '2024-10-01': 4.83,
+        '2024-11-01': 4.64,
+        '2024-12-01': 4.48,
+        '2025-01-01': 4.33,  # End of decline, start flat
+        '2025-02-01': 4.33,
+        '2025-03-01': 4.33,
+        '2025-04-01': 4.33,
+        '2025-05-01': 4.33,
+        '2025-06-01': 4.33,
+        '2025-07-01': 4.33   # Extend to cover our date range
+    }
+    
+    # Create a DataFrame with FEDFUNDS data
+    fedfunds_df = pd.DataFrame([
+        {'Date': pd.to_datetime(date), 'fedfunds': rate} 
+        for date, rate in fedfunds_data.items()
+    ])
+    fedfunds_df = fedfunds_df.sort_values('Date').reset_index(drop=True)
+    
+    # Create daily interpolated FEDFUNDS data for our full date range
+    full_date_range = pd.date_range(start=datetime(2023, 7, 1), end=datetime(2025, 7, 31), freq='D')
+    fedfunds_daily = pd.DataFrame({'Date': full_date_range})
+    
+    # Merge with known data points
+    fedfunds_daily = fedfunds_daily.merge(fedfunds_df, on='Date', how='left')
+    
+    # Forward fill to handle flat periods, then interpolate for declining periods
+    fedfunds_daily['fedfunds'] = fedfunds_daily['fedfunds'].ffill().bfill()
+    
+    # For smoother transition during the declining period (2024-09 to 2025-01), use linear interpolation
+    # Find the declining period
+    decline_start = pd.to_datetime('2024-09-01')
+    decline_end = pd.to_datetime('2025-01-01')
+    
+    # Get indices for the declining period
+    decline_mask = (fedfunds_daily['Date'] >= decline_start) & (fedfunds_daily['Date'] <= decline_end)
+    
+    # For the declining period, interpolate linearly between known points
+    if decline_mask.any():
+        # Set known points in declining period
+        known_points = fedfunds_daily[fedfunds_daily['Date'].isin(fedfunds_df['Date'])].copy()
+        decline_period = fedfunds_daily[decline_mask].copy()
+        
+        # Linear interpolation for the declining period
+        decline_period['fedfunds'] = np.interp(
+            decline_period['Date'].map(pd.Timestamp.toordinal),
+            known_points[known_points['Date'] >= decline_start]['Date'].map(pd.Timestamp.toordinal),
+            known_points[known_points['Date'] >= decline_start]['fedfunds']
+        )
+        
+        # Update the main dataframe
+        fedfunds_daily.loc[decline_mask, 'fedfunds'] = decline_period['fedfunds']
+    
+    print(f"FEDFUNDS data created: {len(fedfunds_daily)} daily observations")
+    print(f"Rate range: {fedfunds_daily['fedfunds'].min():.2f}% to {fedfunds_daily['fedfunds'].max():.2f}%")
     
     # Step 5: Merge with feature matrix
     # Convert date column to datetime for merging
@@ -127,6 +217,15 @@ def create_feature_matrix():
         left_on='date_dt', 
         right_on='Date', 
         how='left'
+    )
+    
+    # Merge FEDFUNDS data
+    feature_matrix = feature_matrix.merge(
+        fedfunds_daily[['Date', 'fedfunds']],
+        left_on='date_dt',
+        right_on='Date',
+        how='left',
+        suffixes=('', '_fed')
     )
     
     # Merge BTC closing prices and returns
@@ -147,20 +246,54 @@ def create_feature_matrix():
         suffixes=('', '_eth')
     )
     
+    # Merge DXY closing prices
+    feature_matrix = feature_matrix.merge(
+        dxy_data[['Date', 'Close']], 
+        left_on='date_dt', 
+        right_on='Date', 
+        how='left',
+        suffixes=('', '_dxy')
+    )
+    
+    # Merge VIX closing prices
+    feature_matrix = feature_matrix.merge(
+        vix_data[['Date', 'Close']], 
+        left_on='date_dt', 
+        right_on='Date', 
+        how='left',
+        suffixes=('', '_vix')
+    )
+    
     # Clean up columns and rename appropriately
-    feature_matrix = feature_matrix.drop(['date_dt', 'Date', 'Date_btc', 'Date_eth'], axis=1)
+    feature_matrix = feature_matrix.drop(['date_dt', 'Date', 'Date_fed', 'Date_btc', 'Date_eth', 'Date_dxy', 'Date_vix'], axis=1)
     feature_matrix = feature_matrix.rename(columns={
         'Close': 'sol_close',
         'Close_btc': 'btc_close', 
-        'Close_eth': 'eth_close'
+        'Close_eth': 'eth_close',
+        'Close_dxy': 'dxy',
+        'Close_vix': 'vix'
     })
+    
+    # Forward fill missing DXY and VIX data using last known values
+    print("Forward filling missing DXY and VIX data...")
+    dxy_before = feature_matrix['dxy'].notna().sum()
+    vix_before = feature_matrix['vix'].notna().sum()
+    
+    feature_matrix['dxy'] = feature_matrix['dxy'].ffill().bfill()
+    feature_matrix['vix'] = feature_matrix['vix'].ffill().bfill()
+    
+    dxy_after = feature_matrix['dxy'].notna().sum()
+    vix_after = feature_matrix['vix'].notna().sum()
+    
+    print(f"DXY data: {dxy_before} → {dxy_after} days (+{dxy_after - dxy_before} filled)")
+    print(f"VIX data: {vix_before} → {vix_after} days (+{vix_after - vix_before} filled)")
     
     # Calculate relative price ratios
     feature_matrix['sol_price_relative_to_btc'] = feature_matrix['sol_close'] / feature_matrix['btc_close']
     feature_matrix['sol_price_relative_to_eth'] = feature_matrix['sol_close'] / feature_matrix['eth_close']
     
     # Reorder columns to group all 1d, 3d, 7d returns together
-    column_order = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'sol_return_1d', 'btc_return_1d', 'eth_return_1d', 'sol_return_3d', 'btc_return_3d', 'eth_return_3d', 'sol_return_7d', 'btc_return_7d', 'eth_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'target_next_day_rolling_mean_2d', 'target_next_day']
+    column_order = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'sol_return_1d', 'btc_return_1d', 'eth_return_1d', 'sol_return_3d', 'btc_return_3d', 'eth_return_3d', 'sol_return_7d', 'btc_return_7d', 'eth_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'sol_macd_histogram', 'sol_close_sma7_ratio', 'sol_sma7_sma14_ratio', 'sol_price_dev_from_sma7', 'fedfunds', 'dxy', 'vix', 'target_next_day_rolling_mean_2d', 'target_next_day']
     feature_matrix = feature_matrix[column_order]
     
     # Step 6: Display summary statistics
@@ -170,6 +303,8 @@ def create_feature_matrix():
     print(f"SOL actual next day returns: {feature_matrix['sol_actual_next_day_return'].notna().sum()} days")
     print(f"BTC price data available: {feature_matrix['btc_close'].notna().sum()} days")
     print(f"ETH price data available: {feature_matrix['eth_close'].notna().sum()} days")
+    print(f"DXY price data available: {feature_matrix['dxy'].notna().sum()} days")
+    print(f"VIX price data available: {feature_matrix['vix'].notna().sum()} days")
     print(f"SOL 1-day returns calculated: {feature_matrix['sol_return_1d'].notna().sum()} days")
     print(f"BTC 1-day returns calculated: {feature_matrix['btc_return_1d'].notna().sum()} days")
     print(f"ETH 1-day returns calculated: {feature_matrix['eth_return_1d'].notna().sum()} days")
@@ -189,16 +324,15 @@ def create_feature_matrix():
     print(f"Price deviation from SMA7 calculated: {feature_matrix['sol_price_dev_from_sma7'].notna().sum()} days")
     print(f"Target variable available: {feature_matrix['target_next_day'].notna().sum()} days")
     print(f"Target 2d rolling mean calculated: {feature_matrix['target_next_day_rolling_mean_2d'].notna().sum()} days")
+    print(f"FEDFUNDS rate calculated: {feature_matrix['fedfunds'].notna().sum()} days")
     
     print("\nTarget variable distribution:")
     target_counts = feature_matrix['target_next_day'].value_counts().sort_index()
     for target, count in target_counts.items():
         if target == -1:
-            label = "Down (< -2%)"
-        elif target == 0:
-            label = "Neutral (-2% to +2%)"
+            label = "Down (< 0%)"
         elif target == 1:
-            label = "Up (> +2%)"
+            label = "Up (>= 0%)"
         else:
             label = "Unknown"
         print(f"  {label}: {count} days")
@@ -250,6 +384,16 @@ def create_feature_matrix():
     print(f"\nTarget-based feature statistics:")
     print("Target 2d rolling mean:")
     print(feature_matrix['target_next_day_rolling_mean_2d'].describe())
+    
+    print(f"\nMacroeconomic feature statistics:")
+    print("FEDFUNDS interest rate:")
+    print(feature_matrix['fedfunds'].describe())
+    
+    print("\nDXY (Dollar Index):")
+    print(feature_matrix['dxy'].describe())
+    
+    print("\nVIX (Volatility Index):")
+    print(feature_matrix['vix'].describe())
     
     # Step 7: Save the feature matrix
     output_file = 'feature_matrix.csv'
