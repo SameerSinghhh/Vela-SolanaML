@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+import pandas as pd
+import numpy as np
+import ta
+from datetime import datetime, timedelta
+
+def create_feature_matrix():
+    """Create the initial feature matrix for Solana price prediction"""
+    
+    print("Creating feature matrix for Solana price prediction...")
+    print("=" * 60)
+    
+    # Step 1: Create date range from July 20, 2023 to July 14, 2025
+    start_date = datetime(2023, 7, 20)
+    end_date = datetime(2025, 7, 14)
+    
+    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+    
+    # Create the initial dataframe with dates
+    feature_matrix = pd.DataFrame({
+        'date': date_range.strftime('%Y-%m-%d')
+    })
+    
+    print(f"Created date range: {len(feature_matrix)} days from {start_date.date()} to {end_date.date()}")
+    
+    # Step 2: Load SOL price data
+    print("Loading SOL price data...")
+    sol_data = pd.read_csv('price_data/price_data_sol.csv')
+    sol_data['Date'] = pd.to_datetime(sol_data['Date'])
+    
+    # Sort by date (oldest first) for proper calculation
+    sol_data = sol_data.sort_values('Date').reset_index(drop=True)
+    
+    print(f"SOL data loaded: {len(sol_data)} records from {sol_data['Date'].min().date()} to {sol_data['Date'].max().date()}")
+    
+    # Step 2.1: Load BTC price data
+    print("Loading BTC price data...")
+    btc_data = pd.read_csv('price_data/price_data_btc.csv')
+    btc_data['Date'] = pd.to_datetime(btc_data['Date'])
+    btc_data = btc_data.sort_values('Date').reset_index(drop=True)
+    
+    print(f"BTC data loaded: {len(btc_data)} records from {btc_data['Date'].min().date()} to {btc_data['Date'].max().date()}")
+    
+    # Step 2.2: Load ETH price data
+    print("Loading ETH price data...")
+    eth_data = pd.read_csv('price_data/price_data_eth.csv')
+    eth_data['Date'] = pd.to_datetime(eth_data['Date'])
+    eth_data = eth_data.sort_values('Date').reset_index(drop=True)
+    
+    print(f"ETH data loaded: {len(eth_data)} records from {eth_data['Date'].min().date()} to {eth_data['Date'].max().date()}")
+    
+    # Step 3: Calculate 1-day returns (percentage change from previous close)
+    sol_data['sol_return_1d'] = sol_data['Close'].pct_change() * 100
+    
+    # Step 3.1: Calculate 3-day returns (percentage change from 3 days ago)
+    sol_data['sol_return_3d'] = sol_data['Close'].pct_change(periods=3) * 100
+    
+    # Step 3.2: Calculate 7-day returns (percentage change from 7 days ago)
+    sol_data['sol_return_7d'] = sol_data['Close'].pct_change(periods=7) * 100
+    
+    # Step 3.3: Calculate 7-day volatility (rolling standard deviation of daily returns)
+    sol_data['sol_volatility_7d'] = sol_data['sol_return_1d'].rolling(window=7).std()
+    
+    # Step 3.4: Calculate 14-day RSI (Relative Strength Index)
+    sol_data['sol_rsi_14'] = ta.momentum.RSIIndicator(close=sol_data['Close'], window=14).rsi()
+    
+    # Step 4: Calculate next-day target variable
+    # Shift returns by -1 to get next day's return for prediction
+    sol_data['next_day_return'] = sol_data['sol_return_1d'].shift(-1)
+    
+    # Create target variable based on next day's return
+    # -1: down (< -2%), 0: neutral (-2% to +2%), 1: up (> +2%)
+    def classify_movement(return_pct):
+        if pd.isna(return_pct):
+            return np.nan
+        elif return_pct > 2.0:
+            return 1  # Up
+        elif return_pct < -2.0:
+            return -1  # Down
+        else:
+            return 0  # Neutral
+    
+    sol_data['target_next_day'] = sol_data['next_day_return'].apply(classify_movement)
+    
+    # Step 5: Merge with feature matrix
+    # Convert date column to datetime for merging
+    feature_matrix['date_dt'] = pd.to_datetime(feature_matrix['date'])
+    
+    # Merge SOL data with feature matrix
+    feature_matrix = feature_matrix.merge(
+        sol_data[['Date', 'Close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_rsi_14', 'target_next_day']], 
+        left_on='date_dt', 
+        right_on='Date', 
+        how='left'
+    )
+    
+    # Merge BTC closing prices
+    feature_matrix = feature_matrix.merge(
+        btc_data[['Date', 'Close']], 
+        left_on='date_dt', 
+        right_on='Date', 
+        how='left',
+        suffixes=('', '_btc')
+    )
+    
+    # Merge ETH closing prices
+    feature_matrix = feature_matrix.merge(
+        eth_data[['Date', 'Close']], 
+        left_on='date_dt', 
+        right_on='Date', 
+        how='left',
+        suffixes=('', '_eth')
+    )
+    
+    # Clean up columns and rename appropriately
+    feature_matrix = feature_matrix.drop(['date_dt', 'Date', 'Date_btc', 'Date_eth'], axis=1)
+    feature_matrix = feature_matrix.rename(columns={
+        'Close': 'sol_close',
+        'Close_btc': 'btc_close', 
+        'Close_eth': 'eth_close'
+    })
+    
+    # Calculate relative price ratios
+    feature_matrix['sol_price_relative_to_btc'] = feature_matrix['sol_close'] / feature_matrix['btc_close']
+    feature_matrix['sol_price_relative_to_eth'] = feature_matrix['sol_close'] / feature_matrix['eth_close']
+    
+    # Reorder columns to put relative prices after returns and before target
+    column_order = ['date', 'sol_close', 'btc_close', 'eth_close', 'sol_return_1d', 'sol_return_3d', 'sol_return_7d', 'sol_volatility_7d', 'sol_price_relative_to_btc', 'sol_price_relative_to_eth', 'sol_rsi_14', 'target_next_day']
+    feature_matrix = feature_matrix[column_order]
+    
+    # Step 6: Display summary statistics
+    print("\nFeature Matrix Summary:")
+    print(f"Total rows: {len(feature_matrix)}")
+    print(f"SOL price data available: {feature_matrix['sol_close'].notna().sum()} days")
+    print(f"BTC price data available: {feature_matrix['btc_close'].notna().sum()} days")
+    print(f"ETH price data available: {feature_matrix['eth_close'].notna().sum()} days")
+    print(f"1-day returns calculated: {feature_matrix['sol_return_1d'].notna().sum()} days")
+    print(f"3-day returns calculated: {feature_matrix['sol_return_3d'].notna().sum()} days")
+    print(f"7-day returns calculated: {feature_matrix['sol_return_7d'].notna().sum()} days")
+    print(f"7-day volatility calculated: {feature_matrix['sol_volatility_7d'].notna().sum()} days")
+    print(f"SOL/BTC ratio calculated: {feature_matrix['sol_price_relative_to_btc'].notna().sum()} days")
+    print(f"SOL/ETH ratio calculated: {feature_matrix['sol_price_relative_to_eth'].notna().sum()} days")
+    print(f"14-day RSI calculated: {feature_matrix['sol_rsi_14'].notna().sum()} days")
+    print(f"Target variable available: {feature_matrix['target_next_day'].notna().sum()} days")
+    
+    print("\nTarget variable distribution:")
+    target_counts = feature_matrix['target_next_day'].value_counts().sort_index()
+    for target, count in target_counts.items():
+        if target == -1:
+            label = "Down (< -2%)"
+        elif target == 0:
+            label = "Neutral (-2% to +2%)"
+        elif target == 1:
+            label = "Up (> +2%)"
+        else:
+            label = "Unknown"
+        print(f"  {label}: {count} days")
+    
+    print(f"\nReturn statistics:")
+    print("1-day returns:")
+    print(feature_matrix['sol_return_1d'].describe())
+    print("\n3-day returns:")
+    print(feature_matrix['sol_return_3d'].describe())
+    print("\n7-day returns:")
+    print(feature_matrix['sol_return_7d'].describe())
+    print("\n7-day volatility:")
+    print(feature_matrix['sol_volatility_7d'].describe())
+    
+    print(f"\nRelative price statistics:")
+    print("SOL/BTC ratio:")
+    print(feature_matrix['sol_price_relative_to_btc'].describe())
+    print("\nSOL/ETH ratio:")
+    print(feature_matrix['sol_price_relative_to_eth'].describe())
+    
+    print(f"\nTechnical indicator statistics:")
+    print("14-day RSI:")
+    print(feature_matrix['sol_rsi_14'].describe())
+    
+    # Step 7: Save the feature matrix
+    output_file = 'feature_matrix.csv'
+    feature_matrix.to_csv(output_file, index=False)
+    print(f"\n✓ Feature matrix saved to: {output_file}")
+    
+    # Display first few rows
+    print(f"\nFirst 2 rows of feature matrix:")
+    print(feature_matrix.head(2).to_string(index=False))
+    
+    return feature_matrix
+
+if __name__ == "__main__":
+    feature_matrix = create_feature_matrix() 
