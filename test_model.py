@@ -45,6 +45,7 @@ def advanced_model_test():
     print(f"Features: {len(feature_cols)}")
     print(f"Using features: {feature_cols}")
     print(f"Excluded raw prices: sol_close, btc_close, eth_close")
+    print(f"✅ Including BTC & ETH returns: 1d, 3d, 7d timeframes")
     
     # Handle missing values
     missing_counts = X.isnull().sum()
@@ -265,6 +266,14 @@ def advanced_model_test():
         'f1_macro': f1_score(y_test, ensemble_pred, average='macro')
     }
     
+    # Add ensemble to best_models so trading simulation can use it
+    best_models['Ensemble'] = {
+        'model': voting_clf,
+        'predictions': ensemble_pred,
+        'probabilities': voting_clf.predict_proba(X_test),
+        'use_scaled': False  # Ensemble uses non-scaled data
+    }
+    
     # Step 8: Display comprehensive results
     print(f"\n📊 COMPREHENSIVE MODEL RESULTS")
     print("=" * 70)
@@ -353,14 +362,33 @@ def advanced_model_test():
     
     # Feature importance (if available)
     if hasattr(best_model_info.get('model'), 'feature_importances_'):
-        print(f"\n🔍 Feature Importance (Top 10):")
+        print(f"\n🔍 Feature Importance (Top 15):")
         feature_importance = pd.DataFrame({
             'feature': feature_cols,
             'importance': best_model_info['model'].feature_importances_
         }).sort_values('importance', ascending=False)
         
-        for i, (idx, row) in enumerate(feature_importance.head(10).iterrows()):
-            print(f"  {i+1:2d}. {row['feature']:25}: {row['importance']:.4f}")
+        print("     Feature                    Importance  Category")
+        print("     ────────────────────────── ────────────────────")
+        for i, (idx, row) in enumerate(feature_importance.head(15).iterrows()):
+            # Categorize features
+            feature_name = row['feature']
+            if 'btc_return' in feature_name:
+                category = "BTC Returns"
+            elif 'eth_return' in feature_name:
+                category = "ETH Returns"  
+            elif 'sol_return' in feature_name:
+                category = "SOL Returns"
+            elif 'relative' in feature_name:
+                category = "Price Ratios"
+            elif 'rsi' in feature_name or 'macd' in feature_name:
+                category = "Indicators"
+            elif 'sma' in feature_name or 'volatility' in feature_name:
+                category = "Technical"
+            else:
+                category = "Other"
+                
+            print(f"  {i+1:2d}. {feature_name:25}: {row['importance']:.4f}  {category}")
     
     # Final insights
     print(f"\n💡 KEY INSIGHTS:")
