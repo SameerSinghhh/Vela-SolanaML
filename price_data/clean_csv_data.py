@@ -98,6 +98,44 @@ def clean_sp_file(input_filename, output_filename):
     except Exception as e:
         print(f"✗ Error cleaning {input_filename}: {str(e)}")
 
+def clean_dxy_vix_file(input_filename, output_filename):
+    """Clean up DXY/VIX CSV files to match SOL format"""
+    print(f"Cleaning DXY/VIX file {input_filename} -> {output_filename}...")
+    
+    try:
+        df = pd.read_csv(input_filename, sep='\t')
+        df.columns = df.columns.str.strip()
+        
+        # Standardize the Date column
+        if 'Date' in df.columns:
+            df['Date'] = df['Date'].apply(convert_date)
+        
+        # Clean up numeric columns - remove commas and convert to numeric
+        numeric_columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '')
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Handle Volume column - replace '-' with '0' and clean
+        if 'Volume' in df.columns:
+            df['Volume'] = df['Volume'].astype(str).str.replace('-', '0')
+            df['Volume'] = df['Volume'].str.replace(',', '')
+            df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+            df['Volume'] = df['Volume'].fillna(0).astype(int)
+        
+        # Keep original date order (most recent to oldest, same as other files)
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+        
+        df.to_csv(output_filename, index=False)
+        print(f"✓ Successfully cleaned {output_filename}")
+        print(f"  Columns: {list(df.columns)}")
+        print(f"  Rows: {len(df)}")
+        print(f"  Date range: {df['Date'].min()} to {df['Date'].max()}")
+        
+    except Exception as e:
+        print(f"✗ Error cleaning {input_filename}: {str(e)}")
+
 def main():
     print("Starting CSV cleanup process...")
     print("Reading from raw_ files and outputting to cleaned versions")
@@ -124,9 +162,22 @@ def main():
     else:
         print(f"✗ File not found: {sp_input}")
     
+    # Clean DXY and VIX files - they have similar format to crypto files but different structure
+    dxy_vix_files = [
+        ('raw_price_data_dxy.csv', 'price_data_dxy.csv'),
+        ('raw_price_data_vix.csv', 'price_data_vix.csv')
+    ]
+    
+    for input_file, output_file in dxy_vix_files:
+        if os.path.exists(input_file):
+            clean_dxy_vix_file(input_file, output_file)
+        else:
+            print(f"✗ File not found: {input_file}")
+    
     print("=" * 60)
     print("CSV cleanup completed!")
     print("Original files preserved with 'raw_' prefix")
+    print("Cleaned files: BTC, ETH, SOL, SP500, DXY, VIX")
 
 if __name__ == "__main__":
     main() 

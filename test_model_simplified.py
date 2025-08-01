@@ -7,7 +7,6 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.metrics import precision_score, recall_score, f1_score
-from sklearn.neural_network import MLPClassifier
 import xgboost as xgb
 from sklearn.pipeline import Pipeline
 import warnings
@@ -68,11 +67,11 @@ def simplified_model_test():
         label = target_labels.get(target, f"Unknown ({target})")
         print(f"  {label}: {count} ({percentage:.1f}%)")
     
-    # Step 3: Chronological train-test split (80% train, 20% test)
-    print(f"\n🔄 Creating CHRONOLOGICAL train/test split (80% train, 20% test)...")
+    # Step 3: Chronological train-test split (70% train, 30% test)
+    print(f"\n🔄 Creating CHRONOLOGICAL train/test split (70% train, 30% test)...")
     
-    # Split chronologically - first 80% for training, last 20% for testing
-    split_idx = int(len(df) * 0.8)
+    # Split chronologically - first 70% for training, last 30% for testing
+    split_idx = int(len(df) * 0.7)
     train_data = df.iloc[:split_idx].copy()
     test_data = df.iloc[split_idx:].copy()
     
@@ -126,14 +125,6 @@ def simplified_model_test():
                 'model__kernel': ['rbf', 'linear'],
                 'model__gamma': ['scale', 'auto']
             }
-        },
-        'Neural Network': {
-            'model': MLPClassifier(random_state=42, max_iter=1000),
-            'params': {
-                'model__hidden_layer_sizes': [(100,), (100, 50)],
-                'model__alpha': [0.0001, 0.001],
-                'model__learning_rate_init': [0.001, 0.01]
-            }
         }
     }
     
@@ -152,7 +143,7 @@ def simplified_model_test():
         start_time = time.time()
         
         # Create pipeline with scaling for algorithms that need it
-        if name in ['SVM', 'Neural Network']:
+        if name in ['SVM']:
             pipeline = Pipeline([
                 ('scaler', RobustScaler()),
                 ('model', model_info['model'])
@@ -311,6 +302,121 @@ def simplified_model_test():
     print(f"\n🎉 Model evaluation completed!")
     print(f"📊 Best model: {best_model_name} with {best_metrics['accuracy']:.1%} accuracy")
     
+    # Feature Importance Analysis
+    print(f"\n" + "=" * 70)
+    print(f"🎯 FEATURE IMPORTANCE ANALYSIS")
+    print(f"=" * 70)
+    
+    best_model_obj = best_models[best_model_name]
+    
+    # Extract feature importance based on model type
+    if hasattr(best_model_obj, 'feature_importances_'):
+        # Tree-based models (RF, XGBoost, GB)
+        feature_importance = best_model_obj.feature_importances_
+        importance_type = "Feature Importance"
+    elif hasattr(best_model_obj, 'coef_'):
+        # Linear models (SVM with linear kernel)
+        feature_importance = np.abs(best_model_obj.coef_[0])
+        importance_type = "Coefficient Magnitude"
+    else:
+        # Try to get from pipeline
+        if hasattr(best_model_obj.named_steps['model'], 'feature_importances_'):
+            feature_importance = best_model_obj.named_steps['model'].feature_importances_
+            importance_type = "Feature Importance"
+        elif hasattr(best_model_obj.named_steps['model'], 'coef_'):
+            feature_importance = np.abs(best_model_obj.named_steps['model'].coef_[0])
+            importance_type = "Coefficient Magnitude"
+        else:
+            feature_importance = None
+    
+    if feature_importance is not None:
+        # Create feature importance dataframe
+        feature_names = [col for col in df.columns if col not in exclude_cols]
+        importance_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': feature_importance
+        }).sort_values('Importance', ascending=False)
+        
+        print(f"📊 Top 15 Most Important Features ({importance_type}):")
+        print(f"-" * 50)
+        for i, row in importance_df.head(15).iterrows():
+            print(f"{row['Feature']:<35} {row['Importance']:.4f}")
+            
+        print(f"\n💡 Key Insights:")
+        top_3 = importance_df.head(3)['Feature'].tolist()
+        print(f"  🥇 Top 3 features: {', '.join(top_3)}")
+        
+        # Analyze feature categories
+        returns_features = [f for f in feature_names if 'return' in f]
+        tech_features = [f for f in feature_names if any(x in f for x in ['rsi', 'macd', 'sma', 'volatility'])]
+        macro_features = [f for f in feature_names if f in ['fedfunds', 'dxy', 'vix']]
+        relative_features = [f for f in feature_names if 'relative' in f]
+        
+        returns_importance = importance_df[importance_df['Feature'].isin(returns_features)]['Importance'].sum()
+        tech_importance = importance_df[importance_df['Feature'].isin(tech_features)]['Importance'].sum()
+        macro_importance = importance_df[importance_df['Feature'].isin(macro_features)]['Importance'].sum()
+        relative_importance = importance_df[importance_df['Feature'].isin(relative_features)]['Importance'].sum()
+        
+        print(f"  📊 Returns features total importance: {returns_importance:.3f}")
+        print(f"  🔧 Technical indicators total importance: {tech_importance:.3f}")
+        print(f"  🏛️ Macro features total importance: {macro_importance:.3f}")
+        print(f"  🔗 Relative pricing total importance: {relative_importance:.3f}")
+    else:
+        print("⚠️  Feature importance not available for this model type")
+    
+    # UP Bias Analysis
+    print(f"\n" + "=" * 70)
+    print(f"🎯 UP BIAS ANALYSIS")
+    print(f"=" * 70)
+    
+    # Analyze test period distribution
+    test_actual_up = (test_data['target_next_day'] == 1).sum()
+    test_actual_down = (test_data['target_next_day'] == -1).sum()
+    test_total = len(test_data)
+    
+    # Analyze model predictions
+    test_pred_up = (best_predictions == 1).sum()
+    test_pred_down = (best_predictions == -1).sum()
+    
+    # Calculate performance on each class
+    test_targets = test_data['target_next_day'].values
+    up_mask = test_targets == 1
+    down_mask = test_targets == -1
+    
+    up_accuracy = accuracy_score(test_targets[up_mask], best_predictions[up_mask])
+    down_accuracy = accuracy_score(test_targets[down_mask], best_predictions[down_mask])
+    
+    print(f"📊 Test Period Market Distribution:")
+    print(f"  Actual UP days: {test_actual_up} ({test_actual_up/test_total*100:.1f}%)")
+    print(f"  Actual DOWN days: {test_actual_down} ({test_actual_down/test_total*100:.1f}%)")
+    
+    print(f"\n🤖 Model Prediction Distribution:")
+    print(f"  Predicted UP: {test_pred_up} ({test_pred_up/test_total*100:.1f}%)")
+    print(f"  Predicted DOWN: {test_pred_down} ({test_pred_down/test_total*100:.1f}%)")
+    
+    print(f"\n📈 Class-Specific Accuracy:")
+    print(f"  UP accuracy: {up_accuracy:.1%} ({(best_predictions[up_mask] == 1).sum()}/{up_mask.sum()} correct)")
+    print(f"  DOWN accuracy: {down_accuracy:.1%} ({(best_predictions[down_mask] == -1).sum()}/{down_mask.sum()} correct)")
+    
+    # Analysis conclusion
+    market_up_bias = test_actual_up / test_total
+    model_up_bias = test_pred_up / test_total
+    
+    print(f"\n💡 UP Bias Analysis:")
+    if abs(market_up_bias - 0.5) > abs(model_up_bias - 0.5):
+        print(f"  🎯 MARKET DRIVEN: Test period was {'UP' if market_up_bias > 0.5 else 'DOWN'} biased ({market_up_bias:.1%} UP)")
+        print(f"      Model predictions are more balanced ({model_up_bias:.1%} UP)")
+        print(f"      Good UP performance likely due to favorable market conditions")
+    elif model_up_bias > market_up_bias + 0.05:
+        print(f"  ⚠️  MODEL BIAS: Model over-predicts UP ({model_up_bias:.1%} vs {market_up_bias:.1%} actual)")
+        print(f"      Model has learned a systematic UP bias")
+    elif model_up_bias < market_up_bias - 0.05:
+        print(f"  ⚠️  MODEL BIAS: Model under-predicts UP ({model_up_bias:.1%} vs {market_up_bias:.1%} actual)")
+        print(f"      Model has learned a systematic DOWN bias")
+    else:
+        print(f"  ✅ BALANCED: Model predictions align with market distribution")
+        print(f"      UP performance reflects genuine predictive skill")
+    
     # Step 9: Simple Trading Simulation
     print(f"\n" + "=" * 70)
     print(f"💰 SIMPLE TRADING SIMULATION")
@@ -344,9 +450,7 @@ def simplified_model_test():
     # Track detailed results for CSV
     detailed_log = []
     
-    print(f"📈 Day-by-Day Trading Results:")
-    print(f"{'Date':<12} {'Pred':<4} {'Actual%':<8} {'Net Strat%':<10} {'ML Value':<10} {'B&H Value':<10}")
-    print(f"-" * 70)
+    print(f"🔄 Running trading simulation...")
     
     for i, (date, prediction, actual_return, actual_target) in enumerate(zip(test_dates, best_predictions, test_actual_returns, test_actual_targets)):
         # Skip if no actual return data
@@ -392,16 +496,6 @@ def simplified_model_test():
             'long_only_balance_before': None,
             'long_only_balance_after': None
         })
-        
-        # Print every 10th day + first/last few days for display
-        if i < 5 or i >= len(test_dates) - 5 or i % 10 == 0:
-            date_str = pd.to_datetime(date).strftime('%Y-%m-%d')
-            pred_str = "UP" if prediction == 1 else "DOWN"
-            actual_return_pct = actual_return * 100
-            strategy_return_after_costs_pct = strategy_return_after_costs * 100
-            print(f"{date_str:<12} {pred_str:<4} {actual_return_pct:>7.1f}% {strategy_return_after_costs_pct:>9.1f}% ${ml_capital:>9.0f} ${buy_hold_capital:>10.0f}")
-        elif i == 5:
-            print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<10} {'...':<10} {'...':<10}")
     
     # Apply final transaction cost for buy & hold strategy (0.1% to sell at the end)
     buy_hold_capital = buy_hold_capital * (1 - transaction_cost_per_trade / 2)
@@ -465,76 +559,6 @@ def simplified_model_test():
     winning_days = sum(1 for day in detailed_log if day['prediction_correct'])
     win_rate = winning_days / total_trading_days if total_trading_days > 0 else 0
     
-    print()
-    print(f"📊 FINAL SIMULATION RESULTS:")
-    print(f"=" * 50)
-    print(f"🤖 ML Trading Strategy:")
-    print(f"  Final Portfolio Value: ${ml_capital:,.2f}")
-    print(f"  Total Return: {ml_total_return:.1%}")
-    print(f"  Win Rate: {win_rate:.1%} ({winning_days}/{total_trading_days} days)")
-    print(f"  Daily Mean Return: {ml_mean_return:.4f} ({ml_mean_return*100:.2f}%)")
-    print(f"  Daily Volatility: {ml_std_return:.4f} ({ml_std_return*100:.2f}%)")
-    print(f"  Sharpe Ratio (Annualized): {ml_sharpe_annual:.3f}")
-    print()
-    print(f"📈 Buy & Hold Strategy:")
-    print(f"  Final Portfolio Value: ${buy_hold_capital:,.2f}")
-    print(f"  Total Return: {buy_hold_total_return:.1%}")
-    print(f"  Daily Mean Return: {buy_hold_mean_return:.4f} ({buy_hold_mean_return*100:.2f}%)")
-    print(f"  Daily Volatility: {buy_hold_std_return:.4f} ({buy_hold_std_return*100:.2f}%)")
-    print(f"  Sharpe Ratio (Annualized): {buy_hold_sharpe_annual:.3f}")
-    print()
-    
-    # Compare strategies
-    excess_return = ml_total_return - buy_hold_total_return
-    if excess_return > 0:
-        print(f"🎯 ML Strategy BEATS Buy & Hold by {excess_return:.1%}")
-        outperformance = ((ml_capital / buy_hold_capital) - 1) * 100
-        print(f"🏆 Outperformance: {outperformance:.1f}%")
-    else:
-        print(f"📉 ML Strategy UNDERPERFORMS Buy & Hold by {abs(excess_return):.1%}")
-        underperformance = ((buy_hold_capital / ml_capital) - 1) * 100
-        print(f"📊 Underperformance: {underperformance:.1f}%")
-    
-    # Sharpe ratio comparison
-    print(f"\n📊 RISK-ADJUSTED PERFORMANCE (Sharpe Ratio):")
-    sharpe_diff = ml_sharpe_annual - buy_hold_sharpe_annual
-    if sharpe_diff > 0:
-        print(f"🎯 ML Strategy has BETTER risk-adjusted returns: {ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}")
-        print(f"🏆 Sharpe Ratio Improvement: +{sharpe_diff:.3f}")
-    else:
-        print(f"📉 ML Strategy has WORSE risk-adjusted returns: {ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}")
-        print(f"🔻 Sharpe Ratio Decline: {abs(sharpe_diff):.3f}")
-    
-    # Sharpe ratio interpretation
-    print(f"\n💡 Sharpe Ratio Interpretation:")
-    if ml_sharpe_annual > 1.0:
-        print(f"  🔥 ML Strategy Sharpe > 1.0: EXCELLENT risk-adjusted performance")
-    elif ml_sharpe_annual > 0.5:
-        print(f"  ✅ ML Strategy Sharpe > 0.5: GOOD risk-adjusted performance")
-    elif ml_sharpe_annual > 0.0:
-        print(f"  ⚠️  ML Strategy Sharpe > 0.0: POSITIVE but modest risk-adjusted performance")
-    else:
-        print(f"  ❌ ML Strategy Sharpe < 0.0: NEGATIVE risk-adjusted performance")
-    
-    print(f"\n💡 Strategy Analysis:")
-    
-    # Calculate UP signal accuracy
-    up_predictions = [day for day in detailed_log if day['prediction'] == 1]
-    correct_up_predictions = [day for day in up_predictions if day['prediction_correct']]
-    
-    # Calculate DOWN signal accuracy  
-    down_predictions = [day for day in detailed_log if day['prediction'] == -1]
-    correct_down_predictions = [day for day in down_predictions if day['prediction_correct']]
-    
-    if len(up_predictions) > 0:
-        up_accuracy = len(correct_up_predictions) / len(up_predictions)
-        print(f"  UP signal accuracy: {up_accuracy:.1%} ({len(correct_up_predictions)}/{len(up_predictions)})")
-    if len(down_predictions) > 0:
-        down_accuracy = len(correct_down_predictions) / len(down_predictions)  
-        print(f"  DOWN signal accuracy: {down_accuracy:.1%} ({len(correct_down_predictions)}/{len(down_predictions)})")
-    
-    print(f"  CSV contains {len(detailed_log)} trading days with full details")
-    
     print(f"\n🎉 Trading simulation completed!")
     
     # Step 10: Long-Only Strategy Variant
@@ -542,18 +566,10 @@ def simplified_model_test():
     print(f"📈 LONG-ONLY STRATEGY SIMULATION")
     print(f"=" * 70)
     
-    print(f"📊 Long-Only Setup:")
-    print(f"  Strategy: Long when predict UP (+1), Cash when predict DOWN (-1)")
-    print(f"  No shorting - cash earns 0% during DOWN predictions")
-    print(f"  Period: {test_data['date'].min().date()} to {test_data['date'].max().date()}")
-    print()
+    print(f"🔄 Calculating long-only strategy...")
     
     # Initialize long-only simulation
     long_only_capital = initial_capital
-    
-    print(f"📈 Long-Only Day-by-Day Results:")
-    print(f"{'Date':<12} {'Pred':<4} {'Position':<8} {'Actual%':<8} {'Net Strat%':<10} {'Long Value':<10}")
-    print(f"-" * 75)
     
     # Update existing detailed_log with long-only data
     for i, (date, prediction, actual_return, actual_target) in enumerate(zip(test_dates, best_predictions, test_actual_returns, test_actual_targets)):
@@ -595,14 +611,7 @@ def simplified_model_test():
                 log_entry['long_only_balance_after'] = long_only_capital
                 break
         
-        # Print every 10th day + first/last few days for display
-        if i < 5 or i >= len(test_dates) - 5 or i % 10 == 0:
-            pred_str = "UP" if prediction == 1 else "DOWN"
-            actual_return_pct = actual_return * 100
-            strategy_return_after_costs_pct = strategy_return_after_costs * 100
-            print(f"{date_str:<12} {pred_str:<4} {position:<8} {actual_return_pct:>7.1f}% {strategy_return_after_costs_pct:>9.1f}% ${long_only_capital:>9.0f}")
-        elif i == 5:
-            print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<8} {'...':<10} {'...':<10}")
+        # No day-by-day printing - results go to CSV
     
     # Calculate long-only daily returns for Sharpe ratio (consistent method)
     valid_entries = [day for day in detailed_log if day['long_only_position'] is not None]
@@ -640,21 +649,39 @@ def simplified_model_test():
     cash_positions = [day for day in valid_entries if day['long_only_position'] == 'CASH']
     
     print()
-    print(f"📊 LONG-ONLY FINAL RESULTS:")
-    print(f"=" * 50)
-    print(f"📈 Long-Only Strategy:")
+    # Update CSV with complete data (both strategies)
+    updated_df = pd.DataFrame(detailed_log)
+    updated_df.to_csv('daily_trading_results.csv', index=False)
+    
+    # Consolidated Simulation Results
+    print(f"\n📊 COMPREHENSIVE SIMULATION RESULTS:")
+    print(f"=" * 70)
+    
+    print(f"🤖 ML Long/Short Strategy:")
+    print(f"  Final Portfolio Value: ${ml_capital:,.2f}")
+    print(f"  Total Return: {ml_total_return:.1%}")
+    print(f"  Daily Mean Return: {ml_mean_return:.4f} ({ml_mean_return*100:.2f}%)")
+    print(f"  Daily Volatility: {ml_std_return:.4f} ({ml_std_return*100:.2f}%)")
+    print(f"  Sharpe Ratio: {ml_sharpe_annual:.3f}")
+    print(f"  Win Rate: {win_rate:.1%} ({winning_days}/{total_trading_days} days)")
+    
+    print(f"\n📈 Long-Only Strategy:")
     print(f"  Final Portfolio Value: ${long_only_capital:,.2f}")
     print(f"  Total Return: {long_only_total_return:.1%}")
-    print(f"  Win Rate: {long_only_win_rate:.1%} ({long_only_winning_days}/{total_long_only_days} days)")
     print(f"  Daily Mean Return: {long_only_mean_return:.4f} ({long_only_mean_return*100:.2f}%)")
     print(f"  Daily Volatility: {long_only_std_return:.4f} ({long_only_std_return*100:.2f}%)")
-    print(f"  Sharpe Ratio (Annualized): {long_only_sharpe_annual:.3f}")
-    print(f"  Long Positions: {len(long_positions)} days ({len(long_positions)/total_long_only_days*100:.1f}%)")
-    print(f"  Cash Positions: {len(cash_positions)} days ({len(cash_positions)/total_long_only_days*100:.1f}%)")
-    print()
+    print(f"  Sharpe Ratio: {long_only_sharpe_annual:.3f}")
+    print(f"  Long Positions: {len(long_positions)} days ({len(long_positions)/total_long_only_days*100:.1f}%) | Cash: {len(cash_positions)} days")
     
-    # Compare all three strategies
-    print(f"🏆 STRATEGY COMPARISON:")
+    print(f"\n📊 Buy & Hold Strategy:")
+    print(f"  Final Portfolio Value: ${buy_hold_capital:,.2f}")
+    print(f"  Total Return: {buy_hold_total_return:.1%}")
+    print(f"  Daily Mean Return: {buy_hold_mean_return:.4f} ({buy_hold_mean_return*100:.2f}%)")
+    print(f"  Daily Volatility: {buy_hold_std_return:.4f} ({buy_hold_std_return*100:.2f}%)")
+    print(f"  Sharpe Ratio: {buy_hold_sharpe_annual:.3f}")
+    
+    # Strategy Comparison Table
+    print(f"\n🏆 STRATEGY COMPARISON:")
     print(f"=" * 70)
     print(f"{'Strategy':<15} {'Final Value':<12} {'Return':<10} {'Sharpe':<8} {'vs Buy&Hold':<12}")
     print(f"-" * 70)
@@ -662,35 +689,36 @@ def simplified_model_test():
     print(f"{'Long-Only':<15} ${long_only_capital:<11,.0f} {long_only_total_return:>8.1%} {long_only_sharpe_annual:>6.2f} {(long_only_total_return - buy_hold_total_return)*100:>10.1f}%")
     print(f"{'Buy & Hold':<15} ${buy_hold_capital:<11,.0f} {buy_hold_total_return:>8.1%} {buy_hold_sharpe_annual:>6.2f} {'0.0%':>10}")
     
-    # Long-only vs ML strategy comparison
-    long_only_vs_ml = long_only_total_return - ml_total_return
-    if long_only_vs_ml > 0:
-        print(f"\n🎯 Long-Only BEATS ML Strategy by {long_only_vs_ml:.1%}")
+    # Risk-Adjusted Performance Summary
+    print(f"\n📊 RISK-ADJUSTED PERFORMANCE:")
+    sharpe_diff_ml = ml_sharpe_annual - buy_hold_sharpe_annual
+    sharpe_diff_lo = long_only_sharpe_annual - buy_hold_sharpe_annual
+    
+    if ml_sharpe_annual > 1.0:
+        ml_rating = "🔥 EXCELLENT"
+    elif ml_sharpe_annual > 0.5:
+        ml_rating = "✅ GOOD"
     else:
-        print(f"\n📉 Long-Only UNDERPERFORMS ML Strategy by {abs(long_only_vs_ml):.1%}")
+        ml_rating = "⚠️ MODERATE"
+        
+    if long_only_sharpe_annual > 1.0:
+        lo_rating = "🔥 EXCELLENT"
+    elif long_only_sharpe_annual > 0.5:
+        lo_rating = "✅ GOOD"
+    else:
+        lo_rating = "⚠️ MODERATE"
     
-    print(f"\n💡 Long-Only Strategy Analysis:")
+    print(f"  ML Strategy: {ml_rating} ({ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}, +{sharpe_diff_ml:.3f})")
+    print(f"  Long-Only: {lo_rating} ({long_only_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}, +{sharpe_diff_lo:.3f})")
     
-    # Long position accuracy
-    correct_long_positions = [day for day in long_positions if day['long_only_prediction_correct']]
-    if len(long_positions) > 0:
-        long_accuracy = len(correct_long_positions) / len(long_positions)
-        print(f"  LONG position accuracy: {long_accuracy:.1%} ({len(correct_long_positions)}/{len(long_positions)})")
+    # Transaction Cost Impact
+    total_trades = len([d for d in detailed_log if d['prediction'] != 0])
+    total_cost_pct = total_trades * transaction_cost_per_trade * 100
+    print(f"\n💸 TRANSACTION COST IMPACT:")
+    print(f"  Total trades: {total_trades} | Cost per trade: {transaction_cost_per_trade*100:.1f}% | Total cost: {total_cost_pct:.1f}%")
     
-    # Cash position accuracy (avoided losses)
-    correct_cash_positions = [day for day in cash_positions if day['long_only_prediction_correct']]
-    if len(cash_positions) > 0:
-        cash_accuracy = len(correct_cash_positions) / len(cash_positions)
-        print(f"  CASH position accuracy: {cash_accuracy:.1%} ({len(correct_cash_positions)}/{len(cash_positions)}) - avoided losses")
-    
-    print(f"  Combined CSV contains {len(valid_entries)} trading days with both long/short and long-only details")
-    
-    # Update CSV with complete data (both strategies)
-    updated_df = pd.DataFrame(detailed_log)
-    updated_df.to_csv('daily_trading_results.csv', index=False)
-    print(f"\n✅ Updated daily_trading_results.csv with both Long/Short AND Long-Only strategy data")
-    
-    print(f"\n🎉 Long-only simulation completed!")
+    print(f"\n✅ Complete trading data saved to: daily_trading_results.csv")
+    print(f"🎉 Simulation completed - {len(detailed_log)} trading days analyzed")
     
     return results, best_models
 

@@ -10,9 +10,9 @@ def create_feature_matrix():
     print("Creating feature matrix for Solana price prediction...")
     print("=" * 60)
     
-    # Step 1: Create date range from July 23, 2023 to July 14, 2025
+    # Step 1: Create date range from July 23, 2023 to August 1, 2025
     start_date = datetime(2023, 7, 23)
-    end_date = datetime(2025, 7, 14)
+    end_date = datetime(2025, 8, 2)
     
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
     
