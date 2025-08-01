@@ -322,12 +322,15 @@ def simplified_model_test():
     test_actual_targets = test_data['target_next_day'].values  # Actual -1/1 classifications
     best_predictions = best_metrics['predictions']
     
+    # Transaction cost parameters
+    transaction_cost_per_trade = 0.002  # 0.2% per round trip (0.1% buy + 0.1% sell)
+    
     print(f"📊 Simulation Setup:")
     print(f"  Period: {test_data['date'].min().date()} to {test_data['date'].max().date()}")
     print(f"  Trading days: {len(test_dates)}")
     print(f"  Initial capital: $10,000")
     print(f"  Strategy: Long when predict UP (+1), Short when predict DOWN (-1)")
-    print(f"  No transaction costs")
+    print(f"  Transaction costs: {transaction_cost_per_trade*100:.1f}% per round trip (0.1% buy + 0.1% sell)")
     print()
     
     # Initialize simulation
@@ -335,11 +338,14 @@ def simplified_model_test():
     ml_capital = initial_capital
     buy_hold_capital = initial_capital
     
+    # Apply initial transaction cost for buy & hold strategy (0.1% to buy)
+    buy_hold_capital = buy_hold_capital * (1 - transaction_cost_per_trade / 2)
+    
     # Track detailed results for CSV
     detailed_log = []
     
     print(f"📈 Day-by-Day Trading Results:")
-    print(f"{'Date':<12} {'Pred':<4} {'Actual%':<8} {'Strategy%':<10} {'ML Value':<10} {'B&H Value':<10}")
+    print(f"{'Date':<12} {'Pred':<4} {'Actual%':<8} {'Net Strat%':<10} {'ML Value':<10} {'B&H Value':<10}")
     print(f"-" * 70)
     
     for i, (date, prediction, actual_return, actual_target) in enumerate(zip(test_dates, best_predictions, test_actual_returns, test_actual_targets)):
@@ -353,11 +359,14 @@ def simplified_model_test():
         else:  # Predicted DOWN - go short  
             strategy_return = -actual_return  # Gain when market down, lose when market up
         
+        # Apply transaction costs to ML strategy (0.2% per day for round trip)
+        strategy_return_after_costs = strategy_return - transaction_cost_per_trade
+        
         # Update portfolios
         ml_capital_before = ml_capital
         buy_hold_capital_before = buy_hold_capital
         
-        ml_capital = ml_capital * (1 + strategy_return)
+        ml_capital = ml_capital * (1 + strategy_return_after_costs)
         buy_hold_capital = buy_hold_capital * (1 + actual_return)
         
         # Check if prediction is correct
@@ -371,6 +380,7 @@ def simplified_model_test():
             'prediction_correct': prediction_correct,
             'actual_return_pct': actual_return * 100,
             'strategy_return_pct': strategy_return * 100,
+            'strategy_return_after_costs_pct': strategy_return_after_costs * 100,
             'ml_balance_before': ml_capital_before,
             'ml_balance_after': ml_capital,
             'buy_hold_balance_before': buy_hold_capital_before,
@@ -388,15 +398,63 @@ def simplified_model_test():
             date_str = pd.to_datetime(date).strftime('%Y-%m-%d')
             pred_str = "UP" if prediction == 1 else "DOWN"
             actual_return_pct = actual_return * 100
-            strategy_return_pct = strategy_return * 100
-            print(f"{date_str:<12} {pred_str:<4} {actual_return_pct:>7.1f}% {strategy_return_pct:>9.1f}% ${ml_capital:>9.0f} ${buy_hold_capital:>10.0f}")
+            strategy_return_after_costs_pct = strategy_return_after_costs * 100
+            print(f"{date_str:<12} {pred_str:<4} {actual_return_pct:>7.1f}% {strategy_return_after_costs_pct:>9.1f}% ${ml_capital:>9.0f} ${buy_hold_capital:>10.0f}")
         elif i == 5:
             print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<10} {'...':<10} {'...':<10}")
+    
+    # Apply final transaction cost for buy & hold strategy (0.1% to sell at the end)
+    buy_hold_capital = buy_hold_capital * (1 - transaction_cost_per_trade / 2)
+    
+    # Update the last entry in detailed_log with final buy & hold balance
+    if detailed_log:
+        detailed_log[-1]['buy_hold_balance_after'] = buy_hold_capital
     
     # Save detailed CSV (will be updated with long-only data later)
     detailed_df = pd.DataFrame(detailed_log)
     detailed_df.to_csv('daily_trading_results.csv', index=False)
     print(f"\n✅ Detailed daily results saved to: daily_trading_results.csv (long-only data will be added)")
+    
+    # Calculate daily returns for Sharpe ratio analysis (consistent method for all days)
+    ml_daily_returns = []
+    buy_hold_daily_returns = []
+    
+    for i in range(len(detailed_log)):
+        # Use consistent calculation: (end_balance - prev_end_balance) / prev_end_balance
+        if i == 0:
+            # First day: use starting balance as previous balance
+            ml_prev_balance = detailed_log[i]['ml_balance_before']
+            buy_hold_prev_balance = detailed_log[i]['buy_hold_balance_before']
+        else:
+            # Subsequent days: use previous day's ending balance
+            ml_prev_balance = detailed_log[i-1]['ml_balance_after']
+            buy_hold_prev_balance = detailed_log[i-1]['buy_hold_balance_after']
+            
+        ml_curr_balance = detailed_log[i]['ml_balance_after']
+        buy_hold_curr_balance = detailed_log[i]['buy_hold_balance_after']
+        
+        ml_return = (ml_curr_balance - ml_prev_balance) / ml_prev_balance
+        buy_hold_return = (buy_hold_curr_balance - buy_hold_prev_balance) / buy_hold_prev_balance
+        
+        ml_daily_returns.append(ml_return)
+        buy_hold_daily_returns.append(buy_hold_return)
+    
+    # Calculate Sharpe ratios (assuming 0% risk-free rate for simplicity)
+    # Note: For risk-adjusted returns with risk-free rate, use:
+    # risk_free_daily = 0.05 / 252  # e.g., 5% annualized risk-free rate
+    # excess_returns = [r - risk_free_daily for r in daily_returns]
+    
+    ml_mean_return = np.mean(ml_daily_returns)
+    ml_std_return = np.std(ml_daily_returns, ddof=1)
+    ml_sharpe_ratio = ml_mean_return / ml_std_return if ml_std_return > 0 else 0
+    
+    buy_hold_mean_return = np.mean(buy_hold_daily_returns)
+    buy_hold_std_return = np.std(buy_hold_daily_returns, ddof=1)
+    buy_hold_sharpe_ratio = buy_hold_mean_return / buy_hold_std_return if buy_hold_std_return > 0 else 0
+    
+    # Annualize Sharpe ratios (multiply by sqrt(252) for daily data)
+    ml_sharpe_annual = ml_sharpe_ratio * np.sqrt(252)
+    buy_hold_sharpe_annual = buy_hold_sharpe_ratio * np.sqrt(252)
     
     # Calculate final metrics
     ml_total_return = (ml_capital - initial_capital) / initial_capital
@@ -414,10 +472,16 @@ def simplified_model_test():
     print(f"  Final Portfolio Value: ${ml_capital:,.2f}")
     print(f"  Total Return: {ml_total_return:.1%}")
     print(f"  Win Rate: {win_rate:.1%} ({winning_days}/{total_trading_days} days)")
+    print(f"  Daily Mean Return: {ml_mean_return:.4f} ({ml_mean_return*100:.2f}%)")
+    print(f"  Daily Volatility: {ml_std_return:.4f} ({ml_std_return*100:.2f}%)")
+    print(f"  Sharpe Ratio (Annualized): {ml_sharpe_annual:.3f}")
     print()
     print(f"📈 Buy & Hold Strategy:")
     print(f"  Final Portfolio Value: ${buy_hold_capital:,.2f}")
     print(f"  Total Return: {buy_hold_total_return:.1%}")
+    print(f"  Daily Mean Return: {buy_hold_mean_return:.4f} ({buy_hold_mean_return*100:.2f}%)")
+    print(f"  Daily Volatility: {buy_hold_std_return:.4f} ({buy_hold_std_return*100:.2f}%)")
+    print(f"  Sharpe Ratio (Annualized): {buy_hold_sharpe_annual:.3f}")
     print()
     
     # Compare strategies
@@ -430,6 +494,27 @@ def simplified_model_test():
         print(f"📉 ML Strategy UNDERPERFORMS Buy & Hold by {abs(excess_return):.1%}")
         underperformance = ((buy_hold_capital / ml_capital) - 1) * 100
         print(f"📊 Underperformance: {underperformance:.1f}%")
+    
+    # Sharpe ratio comparison
+    print(f"\n📊 RISK-ADJUSTED PERFORMANCE (Sharpe Ratio):")
+    sharpe_diff = ml_sharpe_annual - buy_hold_sharpe_annual
+    if sharpe_diff > 0:
+        print(f"🎯 ML Strategy has BETTER risk-adjusted returns: {ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}")
+        print(f"🏆 Sharpe Ratio Improvement: +{sharpe_diff:.3f}")
+    else:
+        print(f"📉 ML Strategy has WORSE risk-adjusted returns: {ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}")
+        print(f"🔻 Sharpe Ratio Decline: {abs(sharpe_diff):.3f}")
+    
+    # Sharpe ratio interpretation
+    print(f"\n💡 Sharpe Ratio Interpretation:")
+    if ml_sharpe_annual > 1.0:
+        print(f"  🔥 ML Strategy Sharpe > 1.0: EXCELLENT risk-adjusted performance")
+    elif ml_sharpe_annual > 0.5:
+        print(f"  ✅ ML Strategy Sharpe > 0.5: GOOD risk-adjusted performance")
+    elif ml_sharpe_annual > 0.0:
+        print(f"  ⚠️  ML Strategy Sharpe > 0.0: POSITIVE but modest risk-adjusted performance")
+    else:
+        print(f"  ❌ ML Strategy Sharpe < 0.0: NEGATIVE risk-adjusted performance")
     
     print(f"\n💡 Strategy Analysis:")
     
@@ -467,7 +552,7 @@ def simplified_model_test():
     long_only_capital = initial_capital
     
     print(f"📈 Long-Only Day-by-Day Results:")
-    print(f"{'Date':<12} {'Pred':<4} {'Position':<8} {'Actual%':<8} {'Strategy%':<10} {'Long Value':<10}")
+    print(f"{'Date':<12} {'Pred':<4} {'Position':<8} {'Actual%':<8} {'Net Strat%':<10} {'Long Value':<10}")
     print(f"-" * 75)
     
     # Update existing detailed_log with long-only data
@@ -480,13 +565,16 @@ def simplified_model_test():
         if prediction == 1:  # Predicted UP - go long
             position = "LONG"
             strategy_return = actual_return  # Gain/lose with market
+            # Apply transaction costs for long position (0.2% round trip)
+            strategy_return_after_costs = strategy_return - transaction_cost_per_trade
         else:  # Predicted DOWN - stay in cash
             position = "CASH"
             strategy_return = 0.0  # Cash earns nothing
+            strategy_return_after_costs = 0.0  # No transaction cost for cash
         
         # Update long-only portfolio
         long_only_capital_before = long_only_capital
-        long_only_capital = long_only_capital * (1 + strategy_return)
+        long_only_capital = long_only_capital * (1 + strategy_return_after_costs)
         
         # Check if prediction is correct for long-only context
         if prediction == 1:
@@ -502,7 +590,7 @@ def simplified_model_test():
             if log_entry['date'] == date_str:
                 log_entry['long_only_position'] = position
                 log_entry['long_only_prediction_correct'] = long_only_prediction_correct
-                log_entry['long_only_strategy_return_pct'] = strategy_return * 100
+                log_entry['long_only_strategy_return_pct'] = strategy_return_after_costs * 100
                 log_entry['long_only_balance_before'] = long_only_capital_before
                 log_entry['long_only_balance_after'] = long_only_capital
                 break
@@ -511,16 +599,38 @@ def simplified_model_test():
         if i < 5 or i >= len(test_dates) - 5 or i % 10 == 0:
             pred_str = "UP" if prediction == 1 else "DOWN"
             actual_return_pct = actual_return * 100
-            strategy_return_pct = strategy_return * 100
-            print(f"{date_str:<12} {pred_str:<4} {position:<8} {actual_return_pct:>7.1f}% {strategy_return_pct:>9.1f}% ${long_only_capital:>9.0f}")
+            strategy_return_after_costs_pct = strategy_return_after_costs * 100
+            print(f"{date_str:<12} {pred_str:<4} {position:<8} {actual_return_pct:>7.1f}% {strategy_return_after_costs_pct:>9.1f}% ${long_only_capital:>9.0f}")
         elif i == 5:
             print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<8} {'...':<10} {'...':<10}")
+    
+    # Calculate long-only daily returns for Sharpe ratio (consistent method)
+    valid_entries = [day for day in detailed_log if day['long_only_position'] is not None]
+    long_only_daily_returns = []
+    
+    for i in range(len(valid_entries)):
+        # Use consistent calculation: (end_balance - prev_end_balance) / prev_end_balance
+        if i == 0:
+            # First day: use starting balance as previous balance
+            prev_balance = valid_entries[i]['long_only_balance_before']
+        else:
+            # Subsequent days: use previous day's ending balance
+            prev_balance = valid_entries[i-1]['long_only_balance_after']
+            
+        curr_balance = valid_entries[i]['long_only_balance_after']
+        ret = (curr_balance - prev_balance) / prev_balance
+        long_only_daily_returns.append(ret)
+    
+    # Calculate long-only Sharpe ratio
+    long_only_mean_return = np.mean(long_only_daily_returns)
+    long_only_std_return = np.std(long_only_daily_returns, ddof=1)
+    long_only_sharpe_ratio = long_only_mean_return / long_only_std_return if long_only_std_return > 0 else 0
+    long_only_sharpe_annual = long_only_sharpe_ratio * np.sqrt(252)
     
     # Calculate long-only final metrics
     long_only_total_return = (long_only_capital - initial_capital) / initial_capital
     
     # Calculate long-only metrics using updated detailed_log
-    valid_entries = [day for day in detailed_log if day['long_only_position'] is not None]
     total_long_only_days = len(valid_entries)
     long_only_winning_days = sum(1 for day in valid_entries if day['long_only_prediction_correct'])
     long_only_win_rate = long_only_winning_days / total_long_only_days if total_long_only_days > 0 else 0
@@ -536,18 +646,21 @@ def simplified_model_test():
     print(f"  Final Portfolio Value: ${long_only_capital:,.2f}")
     print(f"  Total Return: {long_only_total_return:.1%}")
     print(f"  Win Rate: {long_only_win_rate:.1%} ({long_only_winning_days}/{total_long_only_days} days)")
+    print(f"  Daily Mean Return: {long_only_mean_return:.4f} ({long_only_mean_return*100:.2f}%)")
+    print(f"  Daily Volatility: {long_only_std_return:.4f} ({long_only_std_return*100:.2f}%)")
+    print(f"  Sharpe Ratio (Annualized): {long_only_sharpe_annual:.3f}")
     print(f"  Long Positions: {len(long_positions)} days ({len(long_positions)/total_long_only_days*100:.1f}%)")
     print(f"  Cash Positions: {len(cash_positions)} days ({len(cash_positions)/total_long_only_days*100:.1f}%)")
     print()
     
     # Compare all three strategies
     print(f"🏆 STRATEGY COMPARISON:")
-    print(f"=" * 50)
-    print(f"{'Strategy':<20} {'Final Value':<12} {'Return':<10} {'vs Buy&Hold':<12}")
-    print(f"-" * 54)
-    print(f"{'ML Long/Short':<20} ${ml_capital:<11,.0f} {ml_total_return:>8.1%} {(ml_total_return - buy_hold_total_return)*100:>10.1f}%")
-    print(f"{'Long-Only':<20} ${long_only_capital:<11,.0f} {long_only_total_return:>8.1%} {(long_only_total_return - buy_hold_total_return)*100:>10.1f}%")
-    print(f"{'Buy & Hold':<20} ${buy_hold_capital:<11,.0f} {buy_hold_total_return:>8.1%} {'0.0%':>10}")
+    print(f"=" * 70)
+    print(f"{'Strategy':<15} {'Final Value':<12} {'Return':<10} {'Sharpe':<8} {'vs Buy&Hold':<12}")
+    print(f"-" * 70)
+    print(f"{'ML Long/Short':<15} ${ml_capital:<11,.0f} {ml_total_return:>8.1%} {ml_sharpe_annual:>6.2f} {(ml_total_return - buy_hold_total_return)*100:>10.1f}%")
+    print(f"{'Long-Only':<15} ${long_only_capital:<11,.0f} {long_only_total_return:>8.1%} {long_only_sharpe_annual:>6.2f} {(long_only_total_return - buy_hold_total_return)*100:>10.1f}%")
+    print(f"{'Buy & Hold':<15} ${buy_hold_capital:<11,.0f} {buy_hold_total_return:>8.1%} {buy_hold_sharpe_annual:>6.2f} {'0.0%':>10}")
     
     # Long-only vs ML strategy comparison
     long_only_vs_ml = long_only_total_return - ml_total_return
