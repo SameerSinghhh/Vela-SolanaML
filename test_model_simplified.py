@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import GridSearchCV, cross_val_score, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, cross_val_score, TimeSeriesSplit
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import RobustScaler
@@ -35,7 +35,8 @@ def simplified_model_test():
     df = df.sort_values('date').reset_index(drop=True)
     
     # Select feature columns (exclude raw prices, future-looking data, and target)
-    exclude_cols = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'target_next_day']
+    # Also exclude target_next_day_rolling_mean_2d as it uses future target information
+    exclude_cols = ['date', 'sol_close', 'sol_actual_next_day_return', 'btc_close', 'eth_close', 'target_next_day', 'target_next_day_rolling_mean_2d']
     feature_cols = [col for col in df.columns if col not in exclude_cols]
     
     # Features to use for training
@@ -142,8 +143,9 @@ def simplified_model_test():
     results = {}
     best_models = {}
     
-    # Prepare cross-validation
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    # Prepare cross-validation - USE TIME SERIES SPLIT TO PREVENT DATA LEAKAGE
+    print("🚨 Using TimeSeriesSplit for proper time series cross-validation (NO DATA LEAKAGE)")
+    cv = TimeSeriesSplit(n_splits=5)  # Respects temporal order
     
     for name, model_info in models.items():
         print(f"🔧 Optimizing {name}...")
@@ -361,7 +363,7 @@ def simplified_model_test():
         # Check if prediction is correct
         prediction_correct = (prediction == actual_target)
         
-        # Log detailed data for CSV
+        # Log detailed data for CSV (will add long-only data later)
         detailed_log.append({
             'date': pd.to_datetime(date).strftime('%Y-%m-%d'),
             'actual_target': int(actual_target),  # -1 or 1
@@ -372,7 +374,13 @@ def simplified_model_test():
             'ml_balance_before': ml_capital_before,
             'ml_balance_after': ml_capital,
             'buy_hold_balance_before': buy_hold_capital_before,
-            'buy_hold_balance_after': buy_hold_capital
+            'buy_hold_balance_after': buy_hold_capital,
+            # Long-only placeholders (will be filled in next step)
+            'long_only_position': None,
+            'long_only_prediction_correct': None,
+            'long_only_strategy_return_pct': None,
+            'long_only_balance_before': None,
+            'long_only_balance_after': None
         })
         
         # Print every 10th day + first/last few days for display
@@ -385,10 +393,10 @@ def simplified_model_test():
         elif i == 5:
             print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<10} {'...':<10} {'...':<10}")
     
-    # Save detailed CSV
+    # Save detailed CSV (will be updated with long-only data later)
     detailed_df = pd.DataFrame(detailed_log)
     detailed_df.to_csv('daily_trading_results.csv', index=False)
-    print(f"\n✅ Detailed daily results saved to: daily_trading_results.csv")
+    print(f"\n✅ Detailed daily results saved to: daily_trading_results.csv (long-only data will be added)")
     
     # Calculate final metrics
     ml_total_return = (ml_capital - initial_capital) / initial_capital
@@ -443,6 +451,133 @@ def simplified_model_test():
     print(f"  CSV contains {len(detailed_log)} trading days with full details")
     
     print(f"\n🎉 Trading simulation completed!")
+    
+    # Step 10: Long-Only Strategy Variant
+    print(f"\n" + "=" * 70)
+    print(f"📈 LONG-ONLY STRATEGY SIMULATION")
+    print(f"=" * 70)
+    
+    print(f"📊 Long-Only Setup:")
+    print(f"  Strategy: Long when predict UP (+1), Cash when predict DOWN (-1)")
+    print(f"  No shorting - cash earns 0% during DOWN predictions")
+    print(f"  Period: {test_data['date'].min().date()} to {test_data['date'].max().date()}")
+    print()
+    
+    # Initialize long-only simulation
+    long_only_capital = initial_capital
+    
+    print(f"📈 Long-Only Day-by-Day Results:")
+    print(f"{'Date':<12} {'Pred':<4} {'Position':<8} {'Actual%':<8} {'Strategy%':<10} {'Long Value':<10}")
+    print(f"-" * 75)
+    
+    # Update existing detailed_log with long-only data
+    for i, (date, prediction, actual_return, actual_target) in enumerate(zip(test_dates, best_predictions, test_actual_returns, test_actual_targets)):
+        # Skip if no actual return data
+        if pd.isna(actual_return) or pd.isna(actual_target):
+            continue
+            
+        # Long-only strategy logic
+        if prediction == 1:  # Predicted UP - go long
+            position = "LONG"
+            strategy_return = actual_return  # Gain/lose with market
+        else:  # Predicted DOWN - stay in cash
+            position = "CASH"
+            strategy_return = 0.0  # Cash earns nothing
+        
+        # Update long-only portfolio
+        long_only_capital_before = long_only_capital
+        long_only_capital = long_only_capital * (1 + strategy_return)
+        
+        # Check if prediction is correct for long-only context
+        if prediction == 1:
+            # For long predictions, correct if market went up
+            long_only_prediction_correct = (actual_return > 0)
+        else:
+            # For cash predictions, correct if market went down (avoided loss)
+            long_only_prediction_correct = (actual_return < 0)
+        
+        # Find corresponding entry in detailed_log and update with long-only data
+        date_str = pd.to_datetime(date).strftime('%Y-%m-%d')
+        for log_entry in detailed_log:
+            if log_entry['date'] == date_str:
+                log_entry['long_only_position'] = position
+                log_entry['long_only_prediction_correct'] = long_only_prediction_correct
+                log_entry['long_only_strategy_return_pct'] = strategy_return * 100
+                log_entry['long_only_balance_before'] = long_only_capital_before
+                log_entry['long_only_balance_after'] = long_only_capital
+                break
+        
+        # Print every 10th day + first/last few days for display
+        if i < 5 or i >= len(test_dates) - 5 or i % 10 == 0:
+            pred_str = "UP" if prediction == 1 else "DOWN"
+            actual_return_pct = actual_return * 100
+            strategy_return_pct = strategy_return * 100
+            print(f"{date_str:<12} {pred_str:<4} {position:<8} {actual_return_pct:>7.1f}% {strategy_return_pct:>9.1f}% ${long_only_capital:>9.0f}")
+        elif i == 5:
+            print(f"{'...':<12} {'...':<4} {'...':<8} {'...':<8} {'...':<10} {'...':<10}")
+    
+    # Calculate long-only final metrics
+    long_only_total_return = (long_only_capital - initial_capital) / initial_capital
+    
+    # Calculate long-only metrics using updated detailed_log
+    valid_entries = [day for day in detailed_log if day['long_only_position'] is not None]
+    total_long_only_days = len(valid_entries)
+    long_only_winning_days = sum(1 for day in valid_entries if day['long_only_prediction_correct'])
+    long_only_win_rate = long_only_winning_days / total_long_only_days if total_long_only_days > 0 else 0
+    
+    # Calculate position breakdown
+    long_positions = [day for day in valid_entries if day['long_only_position'] == 'LONG']
+    cash_positions = [day for day in valid_entries if day['long_only_position'] == 'CASH']
+    
+    print()
+    print(f"📊 LONG-ONLY FINAL RESULTS:")
+    print(f"=" * 50)
+    print(f"📈 Long-Only Strategy:")
+    print(f"  Final Portfolio Value: ${long_only_capital:,.2f}")
+    print(f"  Total Return: {long_only_total_return:.1%}")
+    print(f"  Win Rate: {long_only_win_rate:.1%} ({long_only_winning_days}/{total_long_only_days} days)")
+    print(f"  Long Positions: {len(long_positions)} days ({len(long_positions)/total_long_only_days*100:.1f}%)")
+    print(f"  Cash Positions: {len(cash_positions)} days ({len(cash_positions)/total_long_only_days*100:.1f}%)")
+    print()
+    
+    # Compare all three strategies
+    print(f"🏆 STRATEGY COMPARISON:")
+    print(f"=" * 50)
+    print(f"{'Strategy':<20} {'Final Value':<12} {'Return':<10} {'vs Buy&Hold':<12}")
+    print(f"-" * 54)
+    print(f"{'ML Long/Short':<20} ${ml_capital:<11,.0f} {ml_total_return:>8.1%} {(ml_total_return - buy_hold_total_return)*100:>10.1f}%")
+    print(f"{'Long-Only':<20} ${long_only_capital:<11,.0f} {long_only_total_return:>8.1%} {(long_only_total_return - buy_hold_total_return)*100:>10.1f}%")
+    print(f"{'Buy & Hold':<20} ${buy_hold_capital:<11,.0f} {buy_hold_total_return:>8.1%} {'0.0%':>10}")
+    
+    # Long-only vs ML strategy comparison
+    long_only_vs_ml = long_only_total_return - ml_total_return
+    if long_only_vs_ml > 0:
+        print(f"\n🎯 Long-Only BEATS ML Strategy by {long_only_vs_ml:.1%}")
+    else:
+        print(f"\n📉 Long-Only UNDERPERFORMS ML Strategy by {abs(long_only_vs_ml):.1%}")
+    
+    print(f"\n💡 Long-Only Strategy Analysis:")
+    
+    # Long position accuracy
+    correct_long_positions = [day for day in long_positions if day['long_only_prediction_correct']]
+    if len(long_positions) > 0:
+        long_accuracy = len(correct_long_positions) / len(long_positions)
+        print(f"  LONG position accuracy: {long_accuracy:.1%} ({len(correct_long_positions)}/{len(long_positions)})")
+    
+    # Cash position accuracy (avoided losses)
+    correct_cash_positions = [day for day in cash_positions if day['long_only_prediction_correct']]
+    if len(cash_positions) > 0:
+        cash_accuracy = len(correct_cash_positions) / len(cash_positions)
+        print(f"  CASH position accuracy: {cash_accuracy:.1%} ({len(correct_cash_positions)}/{len(cash_positions)}) - avoided losses")
+    
+    print(f"  Combined CSV contains {len(valid_entries)} trading days with both long/short and long-only details")
+    
+    # Update CSV with complete data (both strategies)
+    updated_df = pd.DataFrame(detailed_log)
+    updated_df.to_csv('daily_trading_results.csv', index=False)
+    print(f"\n✅ Updated daily_trading_results.csv with both Long/Short AND Long-Only strategy data")
+    
+    print(f"\n🎉 Long-only simulation completed!")
     
     return results, best_models
 
