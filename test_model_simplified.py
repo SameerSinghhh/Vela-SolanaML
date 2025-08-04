@@ -9,6 +9,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.metrics import precision_score, recall_score, f1_score
 import xgboost as xgb
 from sklearn.pipeline import Pipeline
+import shap
 import warnings
 warnings.filterwarnings('ignore')
 import time
@@ -302,67 +303,133 @@ def simplified_model_test():
     print(f"\n🎉 Model evaluation completed!")
     print(f"📊 Best model: {best_model_name} with {best_metrics['accuracy']:.1%} accuracy")
     
-    # Feature Importance Analysis
+    # Comprehensive Feature Importance Analysis (Traditional + SHAP)
     print(f"\n" + "=" * 70)
-    print(f"🎯 FEATURE IMPORTANCE ANALYSIS")
+    print(f"🎯 COMPREHENSIVE FEATURE IMPORTANCE ANALYSIS")
     print(f"=" * 70)
     
     best_model_obj = best_models[best_model_name]
+    feature_names = [col for col in df.columns if col not in exclude_cols]
     
-    # Extract feature importance based on model type
+    # Traditional Feature Importance (if available)
+    traditional_importance = None
+    importance_type = None
+    
     if hasattr(best_model_obj, 'feature_importances_'):
         # Tree-based models (RF, XGBoost, GB)
-        feature_importance = best_model_obj.feature_importances_
-        importance_type = "Feature Importance"
+        traditional_importance = best_model_obj.feature_importances_
+        importance_type = "Tree-based Feature Importance"
     elif hasattr(best_model_obj, 'coef_'):
         # Linear models (SVM with linear kernel)
-        feature_importance = np.abs(best_model_obj.coef_[0])
+        traditional_importance = np.abs(best_model_obj.coef_[0])
         importance_type = "Coefficient Magnitude"
     else:
         # Try to get from pipeline
         if hasattr(best_model_obj.named_steps['model'], 'feature_importances_'):
-            feature_importance = best_model_obj.named_steps['model'].feature_importances_
-            importance_type = "Feature Importance"
+            traditional_importance = best_model_obj.named_steps['model'].feature_importances_
+            importance_type = "Tree-based Feature Importance"
         elif hasattr(best_model_obj.named_steps['model'], 'coef_'):
-            feature_importance = np.abs(best_model_obj.named_steps['model'].coef_[0])
+            traditional_importance = np.abs(best_model_obj.named_steps['model'].coef_[0])
             importance_type = "Coefficient Magnitude"
-        else:
-            feature_importance = None
     
-    if feature_importance is not None:
-        # Create feature importance dataframe
-        feature_names = [col for col in df.columns if col not in exclude_cols]
+    # Display Traditional Importance (if available)
+    if traditional_importance is not None:
         importance_df = pd.DataFrame({
             'Feature': feature_names,
-            'Importance': feature_importance
-        }).sort_values('Importance', ascending=False)
+            'Traditional_Importance': traditional_importance
+        }).sort_values('Traditional_Importance', ascending=False)
         
-        print(f"📊 Top 15 Most Important Features ({importance_type}):")
-        print(f"-" * 50)
-        for i, row in importance_df.head(15).iterrows():
-            print(f"{row['Feature']:<35} {row['Importance']:.4f}")
+        print(f"📊 Traditional {importance_type}:")
+        print(f"-" * 60)
+        for i, row in importance_df.head(10).iterrows():
+            print(f"{row['Feature']:<35} {row['Traditional_Importance']:.4f}")
+        print()
+    
+    # SHAP Analysis - Simple approach
+    print(f"🔍 SHAP (SHapley Additive exPlanations) Analysis:")
+    print(f"-" * 60)
+    
+    try:
+        # Get train/test features as numpy arrays
+        X_train_raw = train_data[feature_names].values
+        X_test_raw = test_data[feature_names].values
+        
+        print(f"🔄 Computing SHAP values for {best_model_name}...")
+        
+        # Handle pipeline models - extract the actual SVM and apply scaling
+        if hasattr(best_model_obj, 'named_steps') and 'model' in best_model_obj.named_steps:
+            # Extract the raw SVM model and scaler
+            scaler = best_model_obj.named_steps['scaler']
+            svm_model = best_model_obj.named_steps['model']
             
-        print(f"\n💡 Key Insights:")
-        top_3 = importance_df.head(3)['Feature'].tolist()
-        print(f"  🥇 Top 3 features: {', '.join(top_3)}")
+            # Apply scaling to data
+            X_train = scaler.transform(X_train_raw)
+            X_test = scaler.transform(X_test_raw)
+            
+            # Use random sample of training data as background
+            np.random.seed(42)  # For reproducible results
+            background_indices = np.random.choice(len(X_train), size=500, replace=False)
+            background_sample = X_train[background_indices]
+            explainer = shap.KernelExplainer(svm_model.predict_proba, background_sample)
+        else:
+            # For non-pipeline models
+            X_train = X_train_raw
+            X_test = X_test_raw
+            np.random.seed(42)  # For reproducible results
+            background_indices = np.random.choice(len(X_train), size=500, replace=False)
+            background_sample = X_train[background_indices]
+            explainer = shap.KernelExplainer(best_model_obj.predict_proba, background_sample)
         
-        # Analyze feature categories
-        returns_features = [f for f in feature_names if 'return' in f]
-        tech_features = [f for f in feature_names if any(x in f for x in ['rsi', 'macd', 'sma', 'volatility'])]
-        macro_features = [f for f in feature_names if f in ['fedfunds', 'dxy', 'vix']]
-        relative_features = [f for f in feature_names if 'relative' in f]
+        # Get SHAP values for test sample
+        test_sample = X_test[:200]  # First 200 test samples
+        shap_values = explainer.shap_values(test_sample)
         
-        returns_importance = importance_df[importance_df['Feature'].isin(returns_features)]['Importance'].sum()
-        tech_importance = importance_df[importance_df['Feature'].isin(tech_features)]['Importance'].sum()
-        macro_importance = importance_df[importance_df['Feature'].isin(macro_features)]['Importance'].sum()
-        relative_importance = importance_df[importance_df['Feature'].isin(relative_features)]['Importance'].sum()
+        # For binary classification, take the positive class (UP) - index 1
+        if isinstance(shap_values, list) and len(shap_values) == 2:
+            shap_values_up = shap_values[1]  # UP class
+        else:
+            shap_values_up = shap_values
         
-        print(f"  📊 Returns features total importance: {returns_importance:.3f}")
-        print(f"  🔧 Technical indicators total importance: {tech_importance:.3f}")
-        print(f"  🏛️ Macro features total importance: {macro_importance:.3f}")
-        print(f"  🔗 Relative pricing total importance: {relative_importance:.3f}")
-    else:
-        print("⚠️  Feature importance not available for this model type")
+        # Calculate mean absolute SHAP values
+        mean_shap_values = np.mean(np.abs(shap_values_up), axis=0)
+        
+        # Ensure arrays are 1-dimensional
+        mean_shap_values = np.asarray(mean_shap_values).flatten()
+        
+        # Ensure arrays have same length (SHAP sometimes returns values for both classes)
+        if len(feature_names) != len(mean_shap_values):
+            min_len = min(len(feature_names), len(mean_shap_values))
+            feature_names_adj = feature_names[:min_len]
+            mean_shap_values = mean_shap_values[:min_len]
+        else:
+            feature_names_adj = feature_names
+        
+        # Create importance ranking
+        shap_importance_df = pd.DataFrame({
+            'Feature': feature_names_adj,
+            'SHAP_Importance': mean_shap_values
+        }).sort_values('SHAP_Importance', ascending=False)
+        
+        print(f"📊 All Features by SHAP Importance:")
+        print(f"-" * 50)
+        for i, row in shap_importance_df.iterrows():
+            print(f"{row['Feature']:<35} {row['SHAP_Importance']:.4f}")
+        
+        # Top insights
+        top_3_shap = shap_importance_df.head(3)['Feature'].tolist()
+        print(f"\n🥇 Top 3 Most Influential Features: {', '.join(top_3_shap)}")
+        
+        print(f"\n✅ SHAP analysis completed successfully!")
+        
+    except Exception as e:
+        print(f"⚠️  SHAP analysis failed: {str(e)}")
+        
+        if traditional_importance is not None:
+            print(f"\n💡 Key Insights from Traditional Importance:")
+            top_3 = importance_df.head(3)['Feature'].tolist()
+            print(f"  🥇 Top 3 features: {', '.join(top_3)}")
+        else:
+            print(f"⚠️  No feature importance analysis available for this model type")
     
     # UP Bias Analysis
     print(f"\n" + "=" * 70)
