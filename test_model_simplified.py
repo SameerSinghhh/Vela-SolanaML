@@ -14,6 +14,10 @@ import warnings
 warnings.filterwarnings('ignore')
 import time
 
+# 🔧 CONFIGURATION TOGGLE
+# Set to False to run simulation WITHOUT transaction costs
+ENABLE_TRANSACTION_COSTS = False
+
 def simplified_model_test():
     """Simplified ML model testing focused on training and evaluation metrics"""
     
@@ -368,7 +372,7 @@ def simplified_model_test():
             
             # Use random sample of training data as background
             np.random.seed(42)  # For reproducible results
-            background_indices = np.random.choice(len(X_train), size=500, replace=False)
+            background_indices = np.random.choice(len(X_train), size=100, replace=False)
             background_sample = X_train[background_indices]
             explainer = shap.KernelExplainer(svm_model.predict_proba, background_sample)
         else:
@@ -376,12 +380,12 @@ def simplified_model_test():
             X_train = X_train_raw
             X_test = X_test_raw
             np.random.seed(42)  # For reproducible results
-            background_indices = np.random.choice(len(X_train), size=500, replace=False)
+            background_indices = np.random.choice(len(X_train), size=100, replace=False)
             background_sample = X_train[background_indices]
             explainer = shap.KernelExplainer(best_model_obj.predict_proba, background_sample)
         
         # Get SHAP values for test sample
-        test_sample = X_test[:200]  # First 200 test samples
+        test_sample = X_test[:10]  # First 10 test samples
         shap_values = explainer.shap_values(test_sample)
         
         # For binary classification, take the positive class (UP) - index 1
@@ -496,14 +500,17 @@ def simplified_model_test():
     best_predictions = best_metrics['predictions']
     
     # Transaction cost parameters
-    transaction_cost_per_trade = 0.002  # 0.2% per round trip (0.1% buy + 0.1% sell)
+    transaction_cost_per_trade = 0.002 if ENABLE_TRANSACTION_COSTS else 0.0  # 0.2% per round trip (0.1% buy + 0.1% sell)
     
     print(f"📊 Simulation Setup:")
     print(f"  Period: {test_data['date'].min().date()} to {test_data['date'].max().date()}")
     print(f"  Trading days: {len(test_dates)}")
     print(f"  Initial capital: $10,000")
     print(f"  Strategy: Long when predict UP (+1), Short when predict DOWN (-1)")
-    print(f"  Transaction costs: {transaction_cost_per_trade*100:.1f}% per round trip (0.1% buy + 0.1% sell)")
+    if ENABLE_TRANSACTION_COSTS:
+        print(f"  Transaction costs: {transaction_cost_per_trade*100:.1f}% per round trip (0.1% buy + 0.1% sell)")
+    else:
+        print(f"  Transaction costs: DISABLED (0.0%)")
     print()
     
     # Initialize simulation
@@ -516,6 +523,12 @@ def simplified_model_test():
     
     # Track detailed results for CSV
     detailed_log = []
+    
+    # Max drawdown tracking
+    ml_peak = initial_capital
+    buy_hold_peak = buy_hold_capital
+    ml_max_drawdown = 0.0
+    buy_hold_max_drawdown = 0.0
     
     print(f"🔄 Running trading simulation...")
     
@@ -539,6 +552,19 @@ def simplified_model_test():
         
         ml_capital = ml_capital * (1 + strategy_return_after_costs)
         buy_hold_capital = buy_hold_capital * (1 + actual_return)
+        
+        # Update max drawdown tracking
+        if ml_capital > ml_peak:
+            ml_peak = ml_capital
+        else:
+            current_ml_drawdown = (ml_peak - ml_capital) / ml_peak
+            ml_max_drawdown = max(ml_max_drawdown, current_ml_drawdown)
+            
+        if buy_hold_capital > buy_hold_peak:
+            buy_hold_peak = buy_hold_capital
+        else:
+            current_bh_drawdown = (buy_hold_peak - buy_hold_capital) / buy_hold_peak
+            buy_hold_max_drawdown = max(buy_hold_max_drawdown, current_bh_drawdown)
         
         # Check if prediction is correct
         prediction_correct = (prediction == actual_target)
@@ -637,6 +663,8 @@ def simplified_model_test():
     
     # Initialize long-only simulation
     long_only_capital = initial_capital
+    long_only_peak = initial_capital
+    long_only_max_drawdown = 0.0
     
     # Update existing detailed_log with long-only data
     for i, (date, prediction, actual_return, actual_target) in enumerate(zip(test_dates, best_predictions, test_actual_returns, test_actual_targets)):
@@ -658,6 +686,13 @@ def simplified_model_test():
         # Update long-only portfolio
         long_only_capital_before = long_only_capital
         long_only_capital = long_only_capital * (1 + strategy_return_after_costs)
+        
+        # Update max drawdown tracking for long-only
+        if long_only_capital > long_only_peak:
+            long_only_peak = long_only_capital
+        else:
+            current_lo_drawdown = (long_only_peak - long_only_capital) / long_only_peak
+            long_only_max_drawdown = max(long_only_max_drawdown, current_lo_drawdown)
         
         # Check if prediction is correct for long-only context
         if prediction == 1:
@@ -730,6 +765,7 @@ def simplified_model_test():
     print(f"  Daily Mean Return: {ml_mean_return:.4f} ({ml_mean_return*100:.2f}%)")
     print(f"  Daily Volatility: {ml_std_return:.4f} ({ml_std_return*100:.2f}%)")
     print(f"  Sharpe Ratio: {ml_sharpe_annual:.3f}")
+    print(f"  Max Drawdown: {ml_max_drawdown:.1%}")
     print(f"  Win Rate: {win_rate:.1%} ({winning_days}/{total_trading_days} days)")
     
     print(f"\n📈 Long-Only Strategy:")
@@ -738,6 +774,7 @@ def simplified_model_test():
     print(f"  Daily Mean Return: {long_only_mean_return:.4f} ({long_only_mean_return*100:.2f}%)")
     print(f"  Daily Volatility: {long_only_std_return:.4f} ({long_only_std_return*100:.2f}%)")
     print(f"  Sharpe Ratio: {long_only_sharpe_annual:.3f}")
+    print(f"  Max Drawdown: {long_only_max_drawdown:.1%}")
     print(f"  Long Positions: {len(long_positions)} days ({len(long_positions)/total_long_only_days*100:.1f}%) | Cash: {len(cash_positions)} days")
     
     print(f"\n📊 Buy & Hold Strategy:")
@@ -746,6 +783,7 @@ def simplified_model_test():
     print(f"  Daily Mean Return: {buy_hold_mean_return:.4f} ({buy_hold_mean_return*100:.2f}%)")
     print(f"  Daily Volatility: {buy_hold_std_return:.4f} ({buy_hold_std_return*100:.2f}%)")
     print(f"  Sharpe Ratio: {buy_hold_sharpe_annual:.3f}")
+    print(f"  Max Drawdown: {buy_hold_max_drawdown:.1%}")
     
     # Strategy Comparison Table
     print(f"\n🏆 STRATEGY COMPARISON:")
@@ -780,9 +818,12 @@ def simplified_model_test():
     
     # Transaction Cost Impact
     total_trades = len([d for d in detailed_log if d['prediction'] != 0])
-    total_cost_pct = total_trades * transaction_cost_per_trade * 100
     print(f"\n💸 TRANSACTION COST IMPACT:")
-    print(f"  Total trades: {total_trades} | Cost per trade: {transaction_cost_per_trade*100:.1f}% | Total cost: {total_cost_pct:.1f}%")
+    if ENABLE_TRANSACTION_COSTS:
+        total_cost_pct = total_trades * transaction_cost_per_trade * 100
+        print(f"  Total trades: {total_trades} | Cost per trade: {transaction_cost_per_trade*100:.1f}% | Total cost: {total_cost_pct:.1f}%")
+    else:
+        print(f"  Transaction costs: DISABLED (0.0%) - Running simulation without costs")
     
     print(f"\n✅ Complete trading data saved to: daily_trading_results.csv")
     print(f"🎉 Simulation completed - {len(detailed_log)} trading days analyzed")
