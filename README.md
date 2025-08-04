@@ -115,7 +115,6 @@ Edit `test_model_simplified.py` to toggle:
 - **Long Position**: When model predicts UP (+1)
 - **Short Position**: When model predicts DOWN (-1)
 - **Long-Only Variant**: Long on UP, cash on DOWN (lower risk)
-- **Transaction Costs**: 0.2% per round trip (realistic)
 
 ### **💡 Key Insights**
 1. **Binary > Multi-class**: Binary classification significantly outperformed 3-class
