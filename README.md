@@ -1,6 +1,6 @@
 # 🚀 MLSolana: AI-Powered Solana Trading System
 
-> **Successfully predicting Solana's directional movements with 57.2% accuracy and 188.0% returns**
+> **Successfully predicting Solana's directional movements with 57.2% accuracy, 188.0% returns, 1.97 Sharpe Ratio**
 
 ---
 
