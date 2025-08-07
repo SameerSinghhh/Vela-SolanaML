@@ -27,7 +27,7 @@ This research presents a comprehensive machine learning framework for predicting
 ## Performance Summary
 
 ### Model Performance Metrics
-- **Directional Accuracy**: 57.2% (χ² test p < 0.05 vs random baseline)
+- **Directional Accuracy**: 57.2% (beats 50% random baseline)
 - **Precision**: DOWN: 57.0% | UP: 57.4% (balanced performance)
 - **Best Model**: Support Vector Machine with RBF kernel
 - **Testing Period**: December 21, 2024 - July 30, 2025 (222 trading days)
@@ -40,7 +40,7 @@ This research presents a comprehensive machine learning framework for predicting
 | **ML Long-Only** | 86.3% | 1.63 | 31.6% | 1.42 |
 | **Buy & Hold Baseline** | -8.0% | 0.25 | 59.7% | N/A |
 
-**Statistical Significance**: The ML strategy demonstrates 196% excess return over the buy-and-hold baseline, with consistently superior risk-adjusted performance metrics.
+**Performance Overview**: The ML strategy demonstrates 196.1% excess return over the buy-and-hold baseline, with consistently superior risk-adjusted performance metrics.
 
 ---
 
@@ -53,6 +53,11 @@ This research presents a comprehensive machine learning framework for predicting
 - **Cross-Asset Features**: Bitcoin (BTC), Ethereum (ETH) price series
 - **Macroeconomic Indicators**: Federal Funds Rate (FEDFUNDS), Dollar Index (DXY), Volatility Index (VIX)
 - **Temporal Coverage**: July 23, 2023 - July 30, 2025 (739 observations)
+
+**Target Distribution:**
+- **Down (<0%)**: 371 observations (50.2%)
+- **Up (≥0%)**: 368 observations (49.8%)
+- **Class Balance**: Nearly perfect balance eliminates class imbalance issues
 
 **Feature Engineering Pipeline:**
 1. **Price Returns**: 1-day, 3-day, 7-day percentage changes across assets
@@ -71,8 +76,10 @@ This research presents a comprehensive machine learning framework for predicting
 
 **Model Validation:**
 - **Train/Test Split**: 70/30 chronological split to prevent temporal data leakage
+  - **Training Period**: July 23, 2023 - December 20, 2024 (517 days)
+  - **Testing Period**: December 21, 2024 - July 30, 2025 (222 days)
 - **Cross-Validation**: TimeSeriesSplit with 5 folds maintaining temporal ordering
-- **Performance Metrics**: Accuracy, Precision, Recall, F1-score, ROC-AUC
+- **Performance Metrics**: Accuracy, Precision, Recall, F1-score, Confusion Matrix
 
 ### Trading Simulation Framework
 
@@ -170,12 +177,12 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 
 ### Model Performance Comparison
 
-| **Algorithm** | **Accuracy** | **F1-Score** | **CV Score** | **Training Time** |
-|--------------|-------------|-------------|-------------|------------------|
-| **SVM (RBF)** | **57.2%** | **0.571** | **0.411** | 2.3s |
-| XGBoost | 55.0% | 0.549 | 0.472 | 15.7s |
-| Random Forest | 54.5% | 0.514 | 0.433 | 8.2s |
-| Gradient Boosting | 52.3% | 0.522 | 0.480 | 12.1s |
+| **Algorithm** | **Accuracy** | **F1-Score** | **CV Score** | **Confusion Matrix** |
+|--------------|-------------|-------------|-------------|---------------------|
+| **SVM (RBF)** | **57.2%** | **0.571** | **0.411** | **TP:58, TN:69, FP:43, FN:52** |
+| XGBoost | 55.0% | 0.549 | 0.472 | Lower performance |
+| Random Forest | 54.5% | 0.514 | 0.433 | Lower performance |
+| Gradient Boosting | 52.3% | 0.522 | 0.480 | Lower performance |
 
 ### Feature Importance Analysis
 **SHAP (SHapley Additive exPlanations) Results:**
@@ -210,10 +217,11 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 - **Market Timing**: Avoided major drawdowns during adverse periods
 - **Risk-Adjusted Performance**: 1.97 Sharpe ratio vs 0.25 baseline (693% improvement)
 
-**Statistical Tests:**
-- **Chi-squared test**: Directional accuracy significantly above random (p < 0.001)
-- **Sharpe ratio t-test**: Risk-adjusted returns statistically significant (p < 0.01)
-- **Maximum drawdown analysis**: Superior downside protection vs benchmark
+**Model Bias Analysis:**
+- **Prediction Distribution**: DOWN: 54.5% (121/222) | UP: 45.5% (101/222)
+- **Market Distribution**: DOWN: 50.5% (112/222) | UP: 49.5% (110/222)
+- **Class-Specific Accuracy**: DOWN: 61.6% correct | UP: 52.7% correct
+- **Balanced Predictions**: Model shows no systematic bias toward either direction
 
 ### Strategy Comparison
 The **Long-Only strategy** emerges as optimal for risk-conscious implementation:
