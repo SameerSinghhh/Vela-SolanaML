@@ -170,15 +170,22 @@ def create_feature_matrix():
     ])
     fedfunds_df = fedfunds_df.sort_values('Date').reset_index(drop=True)
     
-    # Create daily interpolated FEDFUNDS data for our full date range
-    full_date_range = pd.date_range(start=datetime(2023, 7, 1), end=datetime(2025, 7, 31), freq='D')
+    # Create daily interpolated FEDFUNDS data for our full date range (extend to cover end_date)
+    full_date_range = pd.date_range(start=datetime(2023, 7, 1), end=end_date, freq='D')
     fedfunds_daily = pd.DataFrame({'Date': full_date_range})
     
     # Merge with known data points
     fedfunds_daily = fedfunds_daily.merge(fedfunds_df, on='Date', how='left')
     
-    # Forward fill to handle flat periods, then interpolate for declining periods
+    # Forward fill to handle flat periods and extend beyond known data with 4.33
     fedfunds_daily['fedfunds'] = fedfunds_daily['fedfunds'].ffill().bfill()
+    
+    # For any dates beyond our known data (after July 2025), forward fill with 4.33
+    latest_known_date = fedfunds_df['Date'].max()
+    future_mask = fedfunds_daily['Date'] > latest_known_date
+    if future_mask.any():
+        fedfunds_daily.loc[future_mask, 'fedfunds'] = 4.33
+        print(f"Extended FEDFUNDS rate of 4.33% for {future_mask.sum()} days beyond {latest_known_date.date()}")
     
     # For smoother transition during the declining period (2024-09 to 2025-01), use linear interpolation
     # Find the declining period
