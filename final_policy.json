@@ -1,0 +1,99 @@
+{
+  "policy_type": "decision_list",
+  "rules": [
+    {
+      "if": [
+        {
+          "feat": "sol_price_relative_to_btc",
+          "op": ">",
+          "thr": 0.0015383666801433
+        },
+        {
+          "feat": "sol_macd_histogram",
+          "op": "<",
+          "thr_q": 0.3,
+          "thr": -0.6268150880585658
+        },
+        {
+          "feat": "btc_return_1d",
+          "op": "<=",
+          "thr_q": 0.8,
+          "thr": 1.7546209417693748
+        }
+      ],
+      "then": "DOWN"
+    },
+    {
+      "if": [
+        {
+          "feat": "vix",
+          "op": "<",
+          "thr": 16.888
+        },
+        {
+          "feat": "sol_return_7d",
+          "op": "<",
+          "thr": -6.8768378370012675
+        },
+        {
+          "feat": "eth_return_7d",
+          "op": ">",
+          "thr_q": 0.5,
+          "thr": -0.1895745105430113
+        }
+      ],
+      "then": "DOWN"
+    },
+    {
+      "if": [
+        {
+          "feat": "sol_price_dev_from_sma7",
+          "op": "<=",
+          "thr": -0.023912140938456783
+        }
+      ],
+      "then": "DOWN"
+    },
+    {
+      "if": [
+        {
+          "feat": "sol_price_relative_to_eth",
+          "op": "<=",
+          "thr": 0.01423106368357992
+        },
+        {
+          "feat": "sol_rsi_14",
+          "op": "<",
+          "thr": 53.76787826989301
+        },
+        {
+          "feat": "sol_close_sma7_ratio",
+          "op": "<",
+          "thr_q": 0.7,
+          "thr": 1.0361669533761382
+        }
+      ],
+      "then": "UP"
+    },
+    {
+      "if": [
+        {
+          "feat": "sol_return_1d",
+          "op": ">=",
+          "thr": 2.3120084780541266
+        },
+        {
+          "feat": "sol_price_relative_to_btc",
+          "op": ">",
+          "thr": 0.00244621250979212
+        }
+      ],
+      "then": "DOWN"
+    }
+  ],
+  "default": "UP",
+  "constraints": {
+    "max_rules": 6,
+    "max_predicates_per_rule": 6
+  }
+}

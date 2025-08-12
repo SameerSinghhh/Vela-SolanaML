@@ -1,0 +1,119 @@
+[
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_rsi_14", "op": "<", "thr": 30}, {"feat": "sol_macd_histogram", "op": ">", "thr": 0}], "then": "UP"},
+      {"if": [{"feat": "vix", "op": ">", "thr_q": 0.8}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_price_dev_from_sma7", "op": "<", "thr": -3.0}], "then": "UP"},
+      {"if": [{"feat": "sol_price_dev_from_sma7", "op": ">", "thr": 3.0}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_return_3d", "op": "<", "thr": -2.0}], "then": "UP"},
+      {"if": [{"feat": "vix", "op": ">", "thr_q": 0.9}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_close_sma7_ratio", "op": "<", "thr": 0.97}], "then": "UP"},
+      {"if": [{"feat": "sol_close_sma7_ratio", "op": ">", "thr": 1.03}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_sma7_sma14_ratio", "op": ">", "thr": 1.01}, {"feat": "sol_macd_histogram", "op": ">", "thr": 0}], "then": "UP"},
+      {"if": [{"feat": "sol_sma7_sma14_ratio", "op": "<", "thr": 0.99}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_volatility_7d", "op": ">", "thr_q": 0.8}, {"feat": "vix", "op": ">", "thr_q": 0.8}], "then": "DOWN"},
+      {"if": [{"feat": "sol_rsi_14", "op": ">=", "thr": 55}], "then": "UP"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "btc_return_3d", "op": ">", "thr": 2.0}, {"feat": "eth_return_3d", "op": ">", "thr": 2.0}], "then": "UP"},
+      {"if": [{"feat": "btc_return_3d", "op": "<", "thr": -2.0}, {"feat": "eth_return_3d", "op": "<", "thr": -2.0}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_price_relative_to_btc", "op": ">", "thr_q": 0.7}, {"feat": "sol_price_relative_to_eth", "op": ">", "thr_q": 0.7}], "then": "UP"},
+      {"if": [{"feat": "sol_price_relative_to_btc", "op": "<", "thr_q": 0.3}, {"feat": "sol_price_relative_to_eth", "op": "<", "thr_q": 0.3}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "dxy", "op": ">", "thr_q": 0.8}], "then": "DOWN"},
+      {"if": [{"feat": "vix", "op": "<", "thr_q": 0.5}, {"feat": "sol_rsi_14", "op": ">=", "thr": 50}], "then": "UP"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_return_7d", "op": "<", "thr": -5.0}, {"feat": "sol_rsi_14", "op": "<", "thr": 35}], "then": "UP"},
+      {"if": [{"feat": "sol_return_7d", "op": ">", "thr": 6.0}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_macd_histogram", "op": ">", "thr": 0}, {"feat": "sol_close_sma7_ratio", "op": ">", "thr": 1.0}], "then": "UP"},
+      {"if": [{"feat": "sol_macd_histogram", "op": "<", "thr": 0}, {"feat": "sol_close_sma7_ratio", "op": "<", "thr": 1.0}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "sol_return_1d", "op": "<", "thr_q": 0.1}], "then": "UP"},
+      {"if": [{"feat": "sol_return_1d", "op": ">", "thr_q": 0.9}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  },
+  {
+    "policy_type": "decision_list",
+    "rules": [
+      {"if": [{"feat": "fedfunds", "op": "<", "thr_q": 0.2}, {"feat": "vix", "op": "<", "thr_q": 0.5}], "then": "UP"},
+      {"if": [{"feat": "fedfunds", "op": ">", "thr_q": 0.8}], "then": "DOWN"}
+    ],
+    "default": "DOWN",
+    "constraints": {"max_rules": 5, "max_predicates_per_rule": 3}
+  }
+]

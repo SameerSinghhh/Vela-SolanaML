@@ -1,0 +1,1123 @@
+[
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr_q": 0.2,
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.4,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.2,
+              "thr": 43.48612644054977
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.9206032317745074,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 81,
+    "pred_up_share": 0.5205811138014528,
+    "accuracy": 0.559322033898305,
+    "metrics": {
+      "accuracy": 0.559322033898305,
+      "confusion_matrix": [
+        [
+          111,
+          95
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 215,
+        "pred_down": 198
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5388349514563107
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.5,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.3,
+              "thr": 46.9978585611419
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.834907978765726,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 79,
+    "pred_up_share": 0.5230024213075061,
+    "accuracy": 0.5569007263922519,
+    "metrics": {
+      "accuracy": 0.5569007263922519,
+      "confusion_matrix": [
+        [
+          110,
+          96
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 216,
+        "pred_down": 197
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5339805825242718
+    }
+  },
+  {
+    "policy": {
+      "policy_type": "decision_list",
+      "rules": [
+        {
+          "if": [
+            {
+              "feat": "dxy",
+              "op": ">=",
+              "thr_q": 0.8,
+              "thr": 105.546
+            },
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<",
+              "thr": 0.97186553057512
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": ">=",
+              "thr_q": 0.7,
+              "thr": 4.8404147538020545
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_return_7d",
+              "op": ">",
+              "thr": 1.4376273488793334
+            },
+            {
+              "feat": "sol_price_relative_to_btc",
+              "op": "<",
+              "thr_q": 0.8,
+              "thr": 0.00244621250979212
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_price_dev_from_sma7",
+              "op": "<",
+              "thr_q": 0.7,
+              "thr": 0.036166953376138095
+            },
+            {
+              "feat": "vix",
+              "op": ">",
+              "thr": 16.888
+            },
+            {
+              "feat": "sol_volatility_7d",
+              "op": "<=",
+              "thr": 2.7555913685748714
+            }
+          ],
+          "then": "UP"
+        },
+        {
+          "if": [
+            {
+              "feat": "eth_return_1d",
+              "op": ">",
+              "thr": -0.9265884605979525
+            },
+            {
+              "feat": "sol_price_relative_to_eth",
+              "op": ">",
+              "thr_q": 0.5,
+              "thr": 0.0408187094532633
+            },
+            {
+              "feat": "sol_rsi_14",
+              "op": ">",
+              "thr_q": 0.3,
+              "thr": 46.9978585611419
+            }
+          ],
+          "then": "DOWN"
+        },
+        {
+          "if": [
+            {
+              "feat": "sol_sma7_sma14_ratio",
+              "op": "<=",
+              "thr": 1.0049702648942611
+            },
+            {
+              "feat": "eth_return_7d",
+              "op": "<",
+              "thr": -5.311983811030054
+            },
+            {
+              "feat": "sol_macd_histogram",
+              "op": "<=",
+              "thr_q": 0.8,
+              "thr": 1.1713534789157027
+            }
+          ],
+          "then": "UP"
+        }
+      ],
+      "default": "DOWN",
+      "constraints": {
+        "max_rules": 6,
+        "max_predicates_per_rule": 5
+      }
+    },
+    "sharpe": 2.834907978765726,
+    "max_drawdown": 0.30799853822614853,
+    "turnover": 79,
+    "pred_up_share": 0.5230024213075061,
+    "accuracy": 0.5569007263922519,
+    "metrics": {
+      "accuracy": 0.5569007263922519,
+      "confusion_matrix": [
+        [
+          110,
+          96
+        ],
+        [
+          87,
+          120
+        ]
+      ],
+      "counts": {
+        "actual_up": 207,
+        "actual_down": 206,
+        "pred_up": 216,
+        "pred_down": 197
+      },
+      "up_accuracy": 0.5797101449275363,
+      "down_accuracy": 0.5339805825242718
+    }
+  }
+]
