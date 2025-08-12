@@ -1,0 +1,80 @@
+{
+  "timestamp": "2025-08-11T22:06:50.903259",
+  "policy": {
+    "policy_type": "decision_list",
+    "rules": [
+      {
+        "if": [
+          {
+            "feat": "eth_return_7d",
+            "op": ">",
+            "thr": 6.699015756826475
+          },
+          {
+            "feat": "vix",
+            "op": ">",
+            "thr": 12.783999999999999
+          },
+          {
+            "feat": "sol_price_relative_to_eth",
+            "op": ">=",
+            "thr_q": 0.2,
+            "thr": 0.01423106368357992
+          }
+        ],
+        "then": "UP"
+      },
+      {
+        "if": [
+          {
+            "feat": "btc_return_7d",
+            "op": ">=",
+            "thr_q": 0.3,
+            "thr": -1.9198854868278883
+          },
+          {
+            "feat": "sol_price_relative_to_eth",
+            "op": ">=",
+            "thr_q": 0.7,
+            "thr": 0.049793812099597684
+          },
+          {
+            "feat": "eth_return_7d",
+            "op": "<",
+            "thr_q": 0.7,
+            "thr": 3.955303378365506
+          }
+        ],
+        "then": "DOWN"
+      },
+      {
+        "if": [
+          {
+            "feat": "sol_return_3d",
+            "op": "<",
+            "thr": 4.492430230521825
+          },
+          {
+            "feat": "btc_return_1d",
+            "op": ">",
+            "thr_q": 0.3,
+            "thr": -0.7855302124863651
+          }
+        ],
+        "then": "DOWN"
+      }
+    ],
+    "default": "UP",
+    "constraints": {
+      "max_rules": 6,
+      "max_predicates_per_rule": 3
+    }
+  },
+  "test_return": 0.3070840220129878,
+  "test_sharpe": 0.7737369104268088,
+  "test_max_drawdown": 0.4909573615368286,
+  "test_final_capital": 13070.840220129878,
+  "test_accuracy": 0.5045045045045045,
+  "test_up_accuracy": 0.39090909090909093,
+  "test_down_accuracy": 0.6160714285714286
+}

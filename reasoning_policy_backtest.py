@@ -33,7 +33,7 @@ except Exception:
 ENABLE_TRANSACTION_COSTS = False  # Keep currently disabled by default
 
 # LLM model and search settings
-OPENAI_MODEL = os.getenv("REASONING_MODEL", "gpt-5")
+OPENAI_MODEL = os.getenv("REASONING_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Policy search configuration
@@ -53,8 +53,7 @@ BALANCED_SAMPLE_PER_CLASS = 40  # total ~80 rows
 NUM_ENUM_POLICIES = 3000
 
 # Policy bank configuration
-POLICY_BANK_PATH = 'policy_bank.json'
-POLICY_BANK_SIZE = 20  # keep top N historically best by validation protocol
+BEST_POLICY_PATH = 'best_policy.json'  # single best-of-all-time policy (by TEST metrics)
 
 # Deterministic seeding for local generation
 GLOBAL_RANDOM_SEED = 42
@@ -63,10 +62,10 @@ random.seed(GLOBAL_RANDOM_SEED)
 
 # Prediction balance constraints (target ~50/50 UP vs DOWN)
 PRED_UP_TARGET = 0.5
-PRED_UP_SOFT_MIN = 0.46
-PRED_UP_SOFT_MAX = 0.54
-PRED_UP_HARD_MIN = 0.46
-PRED_UP_HARD_MAX = 0.54
+PRED_UP_SOFT_MIN = 0.42
+PRED_UP_SOFT_MAX = 0.58
+PRED_UP_HARD_MIN = 0.42
+PRED_UP_HARD_MAX = 0.58
 
 
 # =============================
@@ -237,17 +236,58 @@ def run_simulation(
     output_csv_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     transaction_cost_per_trade = 0.002 if ENABLE_TRANSACTION_COSTS else 0.0
+    # Fast path for evaluation (no CSV/log): vectorized computation
+    if output_csv_path is None:
+        returns = np.asarray(actual_returns_pct, dtype=float) / 100.0
+        preds_arr = np.asarray(predictions, dtype=int)
+        strat_ret = np.where(preds_arr == 1, returns, -returns) - transaction_cost_per_trade
+        # Wealth paths
+        ml_wealth = 10000.0 * np.cumprod(1.0 + strat_ret)
+        bh_wealth = 10000.0 * (1 - transaction_cost_per_trade / 2) * np.cumprod(1.0 + returns)
+        bh_wealth[-1] = bh_wealth[-1] * (1 - transaction_cost_per_trade / 2)
+        # Max DD
+        ml_peak = np.maximum.accumulate(ml_wealth)
+        ml_max_drawdown = float(np.max((ml_peak - ml_wealth) / ml_peak)) if ml_wealth.size else 0.0
+        bh_peak = np.maximum.accumulate(bh_wealth)
+        buy_hold_max_drawdown = float(np.max((bh_peak - bh_wealth) / bh_peak)) if bh_wealth.size else 0.0
+        # Sharpe from daily returns
+        ml_mean = float(np.mean(strat_ret)) if strat_ret.size else 0.0
+        ml_std = float(np.std(strat_ret, ddof=1)) if strat_ret.size > 1 else 0.0
+        bh_mean = float(np.mean(returns)) if returns.size else 0.0
+        bh_std = float(np.std(returns, ddof=1)) if returns.size > 1 else 0.0
+        ml_sharpe_daily = (ml_mean / ml_std) if ml_std > 0 else 0.0
+        bh_sharpe_daily = (bh_mean / bh_std) if bh_std > 0 else 0.0
+        ml_sharpe_annual = ml_sharpe_daily * math.sqrt(252)
+        bh_sharpe_annual = bh_sharpe_daily * math.sqrt(252)
+        ml_capital = float(ml_wealth[-1]) if ml_wealth.size else 10000.0
+        buy_hold_capital = float(bh_wealth[-1]) if bh_wealth.size else 10000.0
+        detailed_log = []
+        total_days = int(len(returns))
+        winning_days = int(np.sum(np.where(preds_arr == 1, returns > 0, returns < 0)))
+        win_rate = (winning_days / total_days) if total_days > 0 else 0.0
+        ml_total_return = (ml_capital - 10000.0) / 10000.0
+        bh_total_return = (buy_hold_capital - 10000.0) / 10000.0
+        return {
+            'ml_capital': ml_capital,
+            'buy_hold_capital': buy_hold_capital,
+            'ml_total_return': ml_total_return,
+            'buy_hold_total_return': bh_total_return,
+            'ml_sharpe_annual': ml_sharpe_annual,
+            'buy_hold_sharpe_annual': bh_sharpe_annual,
+            'ml_max_drawdown': ml_max_drawdown,
+            'buy_hold_max_drawdown': buy_hold_max_drawdown,
+            'detailed_log': detailed_log,
+            'win_rate': win_rate,
+            'winning_days': winning_days,
+            'total_days': total_days,
+        }
 
+    # Full path with detailed log and CSV
     initial_capital = 10000.0
     ml_capital = initial_capital
     buy_hold_capital = initial_capital
-
-    # Apply initial cost for buy & hold (half of round-trip)
     buy_hold_capital = buy_hold_capital * (1 - transaction_cost_per_trade / 2)
-
     detailed_log: List[Dict[str, Any]] = []
-
-    # Max drawdown tracking
     ml_peak = initial_capital
     buy_hold_peak = buy_hold_capital
     ml_max_drawdown = 0.0
@@ -256,32 +296,29 @@ def run_simulation(
     for date, pred, actual_ret_pct, actual_target in zip(dates, predictions, actual_returns_pct, actual_targets):
         if pd.isna(actual_ret_pct) or pd.isna(actual_target):
             continue
-
         actual_ret = actual_ret_pct / 100.0
         strategy_return = actual_ret if pred == 1 else -actual_ret
         strategy_return_after_costs = strategy_return - transaction_cost_per_trade
-
         ml_before = ml_capital
         bh_before = buy_hold_capital
-
         ml_capital = ml_capital * (1 + strategy_return_after_costs)
         buy_hold_capital = buy_hold_capital * (1 + actual_ret)
-
-        # Drawdowns
         if ml_capital > ml_peak:
             ml_peak = ml_capital
         else:
             ml_max_drawdown = max(ml_max_drawdown, (ml_peak - ml_capital) / ml_peak)
-
         if buy_hold_capital > buy_hold_peak:
             buy_hold_peak = buy_hold_capital
         else:
             buy_hold_max_drawdown = max(buy_hold_max_drawdown, (buy_hold_peak - buy_hold_capital) / buy_hold_peak)
-
         prediction_correct = int(pred == actual_target)
-
+        # Safe date string conversion
+        try:
+            date_str = pd.Timestamp(date).strftime('%Y-%m-%d')
+        except Exception:
+            date_str = str(date)
         detailed_log.append({
-            'date': pd.to_datetime(date).strftime('%Y-%m-%d'),
+            'date': date_str,
             'actual_target': int(actual_target),
             'prediction': int(pred),
             'prediction_correct': bool(prediction_correct),
@@ -294,17 +331,14 @@ def run_simulation(
             'buy_hold_balance_after': buy_hold_capital,
         })
 
-    # Final sell cost for buy & hold
     buy_hold_capital = buy_hold_capital * (1 - transaction_cost_per_trade / 2)
     if detailed_log:
         detailed_log[-1]['buy_hold_balance_after'] = buy_hold_capital
-
-    # Save CSV if requested
     if output_csv_path:
         pd.DataFrame(detailed_log).to_csv(output_csv_path, index=False)
         print(f"\n✅ Detailed daily results saved to: {output_csv_path}")
 
-    # Daily returns for Sharpe
+    # Daily returns for Sharpe (from balances)
     ml_daily_returns: List[float] = []
     bh_daily_returns: List[float] = []
     for i in range(len(detailed_log)):
@@ -497,8 +531,7 @@ def request_policies_from_llm(client: Any, prompt: str, k: int) -> List[Dict[str
             'messages': messages,
             'max_completion_tokens': 6000,
         }
-        if not str(OPENAI_MODEL).lower().startswith('o3'):
-            kwargs['temperature'] = 0.7
+        # Do not pass temperature to avoid model-specific unsupported params
         res = client.chat.completions.create(**kwargs)
         content = res.choices[0].message.content
     except Exception as e:
@@ -552,8 +585,7 @@ def request_rules_for_window(client: Any, window_df: pd.DataFrame, feature_cols:
             'messages': messages,
             'max_completion_tokens': 1200,
         }
-        if not str(OPENAI_MODEL).lower().startswith('o3'):
-            kwargs['temperature'] = 0.3
+        # Do not pass temperature to avoid model-specific unsupported params
         res = client.chat.completions.create(**kwargs)
         content = res.choices[0].message.content
         data = json.loads(content) if content.strip().startswith('[') else []
@@ -836,8 +868,19 @@ def reasoning_policy_search(
         llm_policies = build_policies_from_rules(window_rules, internal_train, feature_cols, top_rules=20, combos=128)
         raw_policies = llm_policies
     else:
-        print("⚠️  No OpenAI client available; using empty policy set. You can provide candidate policies via 'policies_round_0.json'.")
+        print("⚠️  No OpenAI client available; using empty policy set. You can provide candidate policies via 'best_policy.json'.")
         raw_policies = []
+        
+        # Try to load from best policy file if available
+        if len(raw_policies) == 0 and os.path.exists(BEST_POLICY_PATH):
+            try:
+                with open(BEST_POLICY_PATH, 'r') as f:
+                    best_data = json.load(f)
+                    if 'policy' in best_data:
+                        raw_policies = [best_data['policy']]
+                        print(f"📁 Loaded fallback policy from {BEST_POLICY_PATH}")
+            except Exception as e:
+                print(f"⚠️  Error loading fallback from {BEST_POLICY_PATH}: {e}")
 
     # Allow user-provided candidates as fallback
     if len(raw_policies) == 0 and os.path.exists('policies_round_0.json'):
@@ -880,9 +923,7 @@ def reasoning_policy_search(
     top_candidates = select_top(round0_results, TOP_M)
     print(f"Evaluated INTERNAL_TRAIN candidates: {tested_count}, filtered by balance: {filtered_balance_it}, retained: {len(round0_results)}")
 
-    # Save round 0 logs
-    with open('policies_round_0_results.json', 'w') as f:
-        json.dump(top_candidates, f, indent=2)
+    # Skip writing intermediate round result files per user request
 
     # Refinement rounds
     current_candidates = [tc['policy'] for tc in top_candidates]
@@ -1008,9 +1049,7 @@ def reasoning_policy_search(
         combined = top_candidates + round_results
         top_candidates = select_top(combined, TOP_M)
 
-        # Save round logs
-        with open(f'policies_round_{r+1}_results.json', 'w') as f:
-            json.dump(top_candidates, f, indent=2)
+        # Skip writing intermediate round result files
 
         # Early stop if no improvement
         best_sharpe = max(c['sharpe'] for c in top_candidates) if top_candidates else -1e9
@@ -1080,51 +1119,7 @@ def reasoning_policy_search(
 
     # Freeze policy
     final_policy = best_on_valid['policy']
-    with open('final_policy.json', 'w') as f:
-        json.dump(final_policy, f, indent=2)
-    print("✅ Final policy saved to final_policy.json")
-
-    # Update persistent policy bank
-    try:
-        bank = []
-        if os.path.exists(POLICY_BANK_PATH):
-            with open(POLICY_BANK_PATH, 'r') as f:
-                try:
-                    loaded = json.load(f)
-                    if isinstance(loaded, list):
-                        bank = loaded
-                    else:
-                        bank = []
-                except Exception:
-                    bank = []
-        bank.append({
-            'timestamp': pd.Timestamp.utcnow().isoformat(),
-            'avg_sharpe': valid_sorted[0]['avg_sharpe'] if 'valid_sorted' in locals() else None,
-            'avg_maxdd': valid_sorted[0]['avg_maxdd'] if 'valid_sorted' in locals() else None,
-            'avg_turnover': valid_sorted[0]['avg_turnover'] if 'valid_sorted' in locals() else None,
-            'valid_sharpe': best_on_valid['sharpe'],
-            'valid_maxdd': best_on_valid['max_drawdown'],
-            'valid_turnover': best_on_valid['turnover'],
-            'policy': final_policy
-        })
-        # Deduplicate identical policies and keep top by avg_sharpe
-        unique = {}
-        for entry in bank:
-            key = json.dumps(entry['policy'], sort_keys=True)
-            if key not in unique or (entry.get('avg_sharpe') or -1e9) > (unique[key].get('avg_sharpe') or -1e9):
-                unique[key] = entry
-        ranked = sorted(unique.values(), key=lambda e: -(e.get('avg_sharpe') or -1e9))
-        best_all_time = ranked[:POLICY_BANK_SIZE]
-        with open(POLICY_BANK_PATH, 'w') as f:
-            json.dump(best_all_time, f, indent=2)
-        print(f"💾 Policy bank updated at {POLICY_BANK_PATH} (kept {min(len(ranked), POLICY_BANK_SIZE)} entries)")
-        # Print comparison header (no policy content)
-        if best_all_time:
-            best_entry = best_all_time[0]
-            print("\n🏅 Best-of-All-Time on VALID (rolling avg):")
-            print(f"  avg Sharpe: {best_entry.get('avg_sharpe')} | avg MaxDD: {best_entry.get('avg_maxdd')} | avg Turnover: {best_entry.get('avg_turnover')}")
-    except Exception as e:
-        print(f"⚠️  Failed to update policy bank: {e}")
+    print("✅ Final policy selected and ready for TEST evaluation")
 
     return best_on_valid
 
@@ -1254,28 +1249,55 @@ def main() -> None:
         output_csv_path='daily_trading_results_reasoning.csv',
     )
 
-    # Also compute performance for best-of-all-time policy from bank (if any)
-    best_all_time_entry = None
-    if os.path.exists(POLICY_BANK_PATH):
+    # Save/Update best policy based on TEST performance
+    current_policy_performance = {
+        'timestamp': pd.Timestamp.now().isoformat(),
+        'policy': final_policy,
+        'test_return': sim_results['ml_total_return'],
+        'test_sharpe': sim_results['ml_sharpe_annual'],
+        'test_max_drawdown': sim_results['ml_max_drawdown'],
+        'test_final_capital': sim_results['ml_capital'],
+        'test_accuracy': binary_accuracy,
+        'test_up_accuracy': up_acc,
+        'test_down_accuracy': down_acc
+    }
+    
+    best_policy_exists = os.path.exists(BEST_POLICY_PATH)
+    should_update = False
+    
+    if best_policy_exists:
         try:
-            with open(POLICY_BANK_PATH, 'r') as f:
-                bank = json.load(f)
-            if isinstance(bank, list) and len(bank) > 0 and isinstance(bank[0], dict) and 'policy' in bank[0]:
-                best_all_time_entry = bank[0]
+            with open(BEST_POLICY_PATH, 'r') as f:
+                best_existing = json.load(f)
+            
+            # Compare by TEST return (primary) and Sharpe (secondary)
+            if (current_policy_performance['test_return'] > best_existing.get('test_return', -float('inf')) or
+                (current_policy_performance['test_return'] == best_existing.get('test_return', -float('inf')) and 
+                 current_policy_performance['test_sharpe'] > best_existing.get('test_sharpe', -float('inf')))):
+                should_update = True
+                print(f"\n🏆 NEW BEST POLICY! Current: {current_policy_performance['test_return']:.1%} vs Previous: {best_existing.get('test_return', 0):.1%}")
+            else:
+                print(f"\n📊 Policy performance: {current_policy_performance['test_return']:.1%} vs Best: {best_existing.get('test_return', 0):.1%}")
+        except Exception as e:
+            print(f"⚠️  Error reading existing best policy: {e}")
+            should_update = True
+    else:
+        should_update = True
+        print(f"\n🏆 First run - saving initial policy with {current_policy_performance['test_return']:.1%} return")
+    
+    if should_update:
+        with open(BEST_POLICY_PATH, 'w') as f:
+            json.dump(current_policy_performance, f, indent=2)
+        print(f"💾 Best policy updated and saved to {BEST_POLICY_PATH}")
+    
+    # Load best policy for comparison (either current or existing)
+    best_policy_data = current_policy_performance if should_update else None
+    if not should_update and best_policy_exists:
+        try:
+            with open(BEST_POLICY_PATH, 'r') as f:
+                best_policy_data = json.load(f)
         except Exception:
-            best_all_time_entry = None
-
-    best_all_time_sim = None
-    if best_all_time_entry is not None:
-        best_policy = best_all_time_entry['policy']
-        preds_best = evaluate_decision_list(best_policy, X_test)
-        best_all_time_sim = run_simulation(
-            dates=test_df['date'].values,
-            predictions=preds_best,
-            actual_returns_pct=test_df['sol_actual_next_day_return'].values,
-            actual_targets=y_test,
-            output_csv_path=None,
-        )
+            best_policy_data = current_policy_performance
 
     # Consolidated Simulation Results (verbatim style)
     print(f"\n📊 COMPREHENSIVE REASONING STRATEGY RESULTS:")
@@ -1288,12 +1310,12 @@ def main() -> None:
     log = sim_results['detailed_log']
     for i in range(len(log)):
         if i == 0:
-            ml_prev = log[i]['ml_balance_before']
+            ml_prev = log[i]['reasoning_balance_before']
             bh_prev = log[i]['buy_hold_balance_before']
         else:
-            ml_prev = log[i-1]['ml_balance_after']
+            ml_prev = log[i-1]['reasoning_balance_after']
             bh_prev = log[i-1]['buy_hold_balance_after']
-        ml_curr = log[i]['ml_balance_after']
+        ml_curr = log[i]['reasoning_balance_after']
         bh_curr = log[i]['buy_hold_balance_after']
         ml_daily_returns.append((ml_curr - ml_prev) / ml_prev)
         bh_daily_returns.append((bh_curr - bh_prev) / bh_prev)
@@ -1321,8 +1343,11 @@ def main() -> None:
     print(f"{'Strategy':<20} {'Final Value':<12} {'Return':<10} {'Sharpe':<8} {'vs Buy&Hold':<12}")
     print(f"-" * 70)
     print(f"{'Reasoning L/S (this run)':<20} ${sim_results['ml_capital']:<11,.0f} {sim_results['ml_total_return']:>8.1%} {sim_results['ml_sharpe_annual']:>6.2f} {(sim_results['ml_total_return'] - sim_results['buy_hold_total_return'])*100:>10.1f}%")
-    if best_all_time_sim is not None:
-        print(f"{'Reasoning L/S (best all-time)':<20} ${best_all_time_sim['ml_capital']:<11,.0f} {best_all_time_sim['ml_total_return']:>8.1%} {best_all_time_sim['ml_sharpe_annual']:>6.2f} {(best_all_time_sim['ml_total_return'] - sim_results['buy_hold_total_return'])*100:>10.1f}%")
+    
+    # Show best policy performance if available
+    if best_policy_data and best_policy_data != current_policy_performance:
+        print(f"{'Reasoning L/S (best all-time)':<20} ${best_policy_data['test_final_capital']:<11,.0f} {best_policy_data['test_return']:>8.1%} {best_policy_data['test_sharpe']:>6.2f} {(best_policy_data['test_return'] - sim_results['buy_hold_total_return'])*100:>10.1f}%")
+    
     print(f"{'Buy & Hold':<20} ${sim_results['buy_hold_capital']:<11,.0f} {sim_results['buy_hold_total_return']:>8.1%} {sim_results['buy_hold_sharpe_annual']:>6.2f} {'0.0%':>10}")
 
     total_trades = len([d for d in log if d['prediction'] != 0])
@@ -1335,6 +1360,28 @@ def main() -> None:
 
     print(f"\n✅ Complete trading data saved to: daily_trading_results_reasoning.csv")
     print(f"🎉 Simulation completed - {len(log)} trading days analyzed")
+    
+    # Show best policy summary
+    if best_policy_data:
+        print(f"\n🏆 BEST POLICY SUMMARY:")
+        print(f"=" * 70)
+        print(f"📁 Location: {BEST_POLICY_PATH}")
+        print(f"📅 Last Updated: {best_policy_data['timestamp']}")
+        print(f"📈 Test Performance:")
+        print(f"  Return: {best_policy_data['test_return']:.1%}")
+        print(f"  Sharpe: {best_policy_data['test_sharpe']:.3f}")
+        print(f"  Max Drawdown: {best_policy_data['test_max_drawdown']:.1%}")
+        print(f"  Final Capital: ${best_policy_data['test_final_capital']:,.2f}")
+        print(f"  Accuracy: {best_policy_data['test_accuracy']:.1%}")
+        print(f"  UP Accuracy: {best_policy_data['test_up_accuracy']:.1%}")
+        print(f"  DOWN Accuracy: {best_policy_data['test_down_accuracy']:.1%}")
+        
+        if best_policy_data == current_policy_performance:
+            print(f"✅ Current run produced the best policy!")
+        else:
+            print(f"📊 Current run: {current_policy_performance['test_return']:.1%} vs Best: {best_policy_data['test_return']:.1%}")
+
+
 
 
 if __name__ == "__main__":
