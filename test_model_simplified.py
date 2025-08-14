@@ -11,6 +11,7 @@ import xgboost as xgb
 from sklearn.pipeline import Pipeline
 import shap
 import warnings
+import json
 warnings.filterwarnings('ignore')
 import time
 
@@ -18,11 +19,104 @@ import time
 # Set to False to run simulation WITHOUT transaction costs
 ENABLE_TRANSACTION_COSTS = False
 
-def simplified_model_test():
-    """Simplified ML model testing focused on training and evaluation metrics"""
+# 📊 VALIDATION SET CONFIGURATION
+SPLITS = [
+    (0.60, 0.20, 0.20),
+    (0.70, 0.15, 0.15),
+    (0.75, 0.15, 0.10),
+    (0.80, 0.10, 0.10),
+]
+
+def chrono_slices(df, feature_cols, ratios):
+    """Create chronological train/val/test splits"""
+    n = len(df)
+    tr, va, te = ratios
+    i_tr = int(n * tr)
+    i_va = int(n * (tr + va))
+    train, val, test = df.iloc[:i_tr], df.iloc[i_tr:i_va], df.iloc[i_va:]
+    X_tr, y_tr = train[feature_cols], train['target_next_day']
+    X_va, y_va = val[feature_cols], val['target_next_day']
+    X_te, y_te = test[feature_cols], test['target_next_day']
+    periods = {
+        'train_period': (train['date'].min().date(), train['date'].max().date()),
+        'val_period': (val['date'].min().date(), val['date'].max().date()),
+        'test_period': (test['date'].min().date(), test['date'].max().date()),
+    }
+    return (X_tr, y_tr, X_va, y_va, X_te, y_te, periods)
+
+def tune_and_select_on_val(X_tr, y_tr, X_va, y_va, models):
+    """Tune hyperparameters on train and select best model on validation"""
+    inner_cv = TimeSeriesSplit(n_splits=5)
+    best = None
     
-    print("🚀 MLSolana Simplified Model Test")
-    print("=" * 60)
+    for name, spec in models.items():
+        print(f"    🔧 Tuning {name}...")
+        
+        # Create pipeline
+        if name == 'SVM':
+            pipe = Pipeline([('scaler', RobustScaler()), ('model', spec['model'])])
+        else:
+            pipe = Pipeline([('model', spec['model'])])
+
+        # Handle XGBoost label mapping
+        y_fit = y_tr.map({-1:0, 1:1}) if name == 'XGBoost' else y_tr
+        
+        # Grid search with time series CV
+        gs = GridSearchCV(pipe, spec['params'], cv=inner_cv, scoring='f1_weighted', n_jobs=-1)
+        gs.fit(X_tr, y_fit)
+
+        # Predict on validation set
+        if name == 'XGBoost':
+            y_va_pred = pd.Series(gs.predict(X_va)).map({0:-1, 1:1}).values
+        else:
+            y_va_pred = gs.predict(X_va)
+
+        # Calculate validation metrics
+        val_f1w = f1_score(y_va, y_va_pred, average='weighted')
+        val_acc = accuracy_score(y_va, y_va_pred)
+        
+        row = {
+            'name': name, 
+            'est': gs.best_estimator_, 
+            'params': gs.best_params_,
+            'cv_f1w': gs.best_score_, 
+            'val_f1w': val_f1w, 
+            'val_acc': val_acc
+        }
+        
+        # Select best by validation F1 (tie-break by accuracy)
+        if best is None or (val_f1w, val_acc) > (best['val_f1w'], best['val_acc']):
+            best = row
+            
+        print(f"      ✅ CV F1: {gs.best_score_:.3f}, Val F1: {val_f1w:.3f}, Val Acc: {val_acc:.3f}")
+    
+    return best
+
+def refit_trainval_and_test(best, X_tr, y_tr, X_va, y_va, X_te, y_te):
+    """Refit best model on train+val and evaluate on test"""
+    X_tv = pd.concat([X_tr, X_va])
+    y_tv = pd.concat([y_tr, y_va])
+    est = best['est']
+    
+    # Handle XGBoost label mapping
+    if 'XGBoost' in best['name']:
+        est.fit(X_tv, y_tv.map({-1:0, 1:1}))
+        y_te_pred = pd.Series(est.predict(X_te)).map({0:-1, 1:1}).values
+    else:
+        est.fit(X_tv, y_tv)
+        y_te_pred = est.predict(X_te)
+        
+    return {
+        'test_acc': accuracy_score(y_te, y_te_pred),
+        'test_f1w': f1_score(y_te, y_te_pred, average='weighted'),
+        'y_test_pred': y_te_pred
+    }
+
+def simplified_model_test():
+    """Simplified ML model testing with validation set approach and multiple splits"""
+    
+    print("🚀 MLSolana Simplified Model Test with Validation Set Approach")
+    print("=" * 70)
     
     # Step 1: Load the feature matrix
     print("📊 Loading feature matrix...")
@@ -72,27 +166,7 @@ def simplified_model_test():
         label = target_labels.get(target, f"Unknown ({target})")
         print(f"  {label}: {count} ({percentage:.1f}%)")
     
-    # Step 3: Chronological train-test split (70% train, 30% test)
-    print(f"\n🔄 Creating CHRONOLOGICAL train/test split (70% train, 30% test)...")
-    
-    # Split chronologically - first 70% for training, last 30% for testing
-    split_idx = int(len(df) * 0.7)
-    train_data = df.iloc[:split_idx].copy()
-    test_data = df.iloc[split_idx:].copy()
-    
-    print(f"Training period: {train_data['date'].min().date()} to {train_data['date'].max().date()} ({len(train_data)} days)")
-    print(f"Testing period:  {test_data['date'].min().date()} to {test_data['date'].max().date()} ({len(test_data)} days)")
-    
-    # Prepare train/test sets
-    X_train = train_data[feature_cols].copy()
-    y_train = train_data['target_next_day'].copy()
-    X_test = test_data[feature_cols].copy()
-    y_test = test_data['target_next_day'].copy()
-    
-    print(f"Training set: {X_train.shape[0]} samples")
-    print(f"Test set: {X_test.shape[0]} samples")
-    
-    # Step 4: Define models with hyperparameter grids
+    # Step 3: Define models with hyperparameter grids
     print(f"\n🤖 Setting up models...")
     
     models = {
@@ -133,140 +207,100 @@ def simplified_model_test():
         }
     }
     
-    # Step 5: Train and evaluate models
-    print(f"\n🔍 Training and optimizing models...\n")
+    # Step 4: Evaluate multiple chronological splits with validation sets
+    print(f"\n🔄 Evaluating multiple chronological splits with validation sets...")
+    print("=" * 70)
     
-    results = {}
-    best_models = {}
+    summary = []
     
-    # Prepare cross-validation - USE TIME SERIES SPLIT TO PREVENT DATA LEAKAGE
-    print("🚨 Using TimeSeriesSplit for proper time series cross-validation (NO DATA LEAKAGE)")
-    cv = TimeSeriesSplit(n_splits=5)  # Respects temporal order
-    
-    for name, model_info in models.items():
-        print(f"🔧 Optimizing {name}...")
-        start_time = time.time()
+    for i, ratios in enumerate(SPLITS):
+        print(f"\n📊 SPLIT {i+1}: {ratios[0]*100:.0f}% Train / {ratios[1]*100:.0f}% Val / {ratios[2]*100:.0f}% Test")
+        print("-" * 60)
         
-        # Create pipeline with scaling for algorithms that need it
-        if name in ['SVM']:
-            pipeline = Pipeline([
-                ('scaler', RobustScaler()),
-                ('model', model_info['model'])
-            ])
-        else:
-            pipeline = Pipeline([
-                ('model', model_info['model'])
-            ])
+        # Create chronological splits
+        X_tr, y_tr, X_va, y_va, X_te, y_te, periods = chrono_slices(df, feature_cols, ratios)
         
-        # Handle XGBoost label mapping (needs 0,1 instead of -1,1)
-        if name == 'XGBoost':
-            # Map labels for XGBoost
-            y_train_mapped = y_train.map({-1: 0, 1: 1})
-            y_test_mapped = y_test.map({-1: 0, 1: 1})
-            
-            # Grid search
-            grid_search = GridSearchCV(
-                pipeline, 
-                model_info['params'], 
-                cv=cv, 
-                scoring='f1_weighted',
-                n_jobs=-1
-            )
-            grid_search.fit(X_train, y_train_mapped)
-            
-            # Get predictions and map back
-            y_pred_mapped = grid_search.predict(X_test)
-            y_pred = pd.Series(y_pred_mapped).map({0: -1, 1: 1}).values
-            
-            # Calculate metrics using original labels
-            accuracy = accuracy_score(y_test, y_pred)
-            f1_weighted = f1_score(y_test, y_pred, average='weighted')
-            f1_macro = f1_score(y_test, y_pred, average='macro')
-            cv_score = grid_search.best_score_
-            
-        else:
-            # Regular training for other models
-            grid_search = GridSearchCV(
-                pipeline, 
-                model_info['params'], 
-                cv=cv, 
-                scoring='f1_weighted',
-                n_jobs=-1
-            )
-            grid_search.fit(X_train, y_train)
-            
-            # Predictions
-            y_pred = grid_search.predict(X_test)
-            
-            # Calculate metrics
-            accuracy = accuracy_score(y_test, y_pred)
-            f1_weighted = f1_score(y_test, y_pred, average='weighted')
-            f1_macro = f1_score(y_test, y_pred, average='macro')
-            cv_score = grid_search.best_score_
+        print(f"  📅 Train: {periods['train_period'][0]} to {periods['train_period'][1]} ({len(X_tr)} samples)")
+        print(f"  📅 Val:   {periods['val_period'][0]} to {periods['val_period'][1]} ({len(X_va)} samples)")
+        print(f"  📅 Test:  {periods['test_period'][0]} to {periods['test_period'][1]} ({len(X_te)} samples)")
         
-        training_time = time.time() - start_time
+        # Tune and select best model on validation set
+        best = tune_and_select_on_val(X_tr, y_tr, X_va, y_va, models)
+        
+        # Refit on train+val and evaluate on test
+        out = refit_trainval_and_test(best, X_tr, y_tr, X_va, y_va, X_te, y_te)
         
         # Store results
-        results[name] = {
-            'accuracy': accuracy,
-            'f1_weighted': f1_weighted,
-            'f1_macro': f1_macro,
-            'cv_score': cv_score,
-            'training_time': training_time,
-            'predictions': y_pred,
-            'best_params': grid_search.best_params_
-        }
+        summary.append({
+            'split': f"{ratios[0]*100:.0f}/{ratios[1]*100:.0f}/{ratios[2]*100:.0f}",
+            'chosen_model': best['name'],
+            'cv_f1w': best['cv_f1w'],
+            'val_f1w': best['val_f1w'],
+            'val_acc': best['val_acc'],
+            'test_f1w': out['test_f1w'],
+            'test_acc': out['test_acc'],
+            'best_params': best['params'],
+            'train_period': f"{periods['train_period'][0]} to {periods['train_period'][1]}",
+            'val_period': f"{periods['val_period'][0]} to {periods['val_period'][1]}",
+            'test_period': f"{periods['test_period'][0]} to {periods['test_period'][1]}",
+            'best_estimator': best['est'],
+            'test_predictions': out['y_test_pred'],
+            'test_data': pd.concat([X_te, y_te], axis=1)
+        })
         
-        best_models[name] = grid_search.best_estimator_
-        
-        print(f"   ✅ Best CV F1: {cv_score:.3f}")
-        print(f"   ⏱️  Training time: {training_time:.1f}s")
+        print(f"  🏆 Best model: {best['name']} (Val F1: {best['val_f1w']:.3f}, Val Acc: {best['val_acc']:.3f})")
     
-    # Step 6: Create ensemble model
-    print(f"\n🎭 Creating ensemble model...")
+    # Create summary DataFrame and display results
+    df_summary = pd.DataFrame(summary).sort_values('val_f1w', ascending=False)
     
-    # Get top 3 models for ensemble
-    sorted_models = sorted(results.items(), key=lambda x: x[1]['cv_score'], reverse=True)
-    top_3_models = [(name, best_models[name]) for name, _ in sorted_models[:3]]
-    
-    ensemble = VotingClassifier(
-        estimators=top_3_models,
-        voting='soft'
-    )
-    ensemble.fit(X_train, y_train)
-    ensemble_pred = ensemble.predict(X_test)
-    
-    # Ensemble metrics
-    ensemble_accuracy = accuracy_score(y_test, ensemble_pred)
-    ensemble_f1_weighted = f1_score(y_test, ensemble_pred, average='weighted')
-    ensemble_f1_macro = f1_score(y_test, ensemble_pred, average='macro')
-    
-    results['Ensemble'] = {
-        'accuracy': ensemble_accuracy,
-        'f1_weighted': ensemble_f1_weighted,
-        'f1_macro': ensemble_f1_macro,
-        'cv_score': 'N/A',
-        'predictions': ensemble_pred
-    }
-    
-    best_models['Ensemble'] = ensemble
-    
-    # Step 7: Display comprehensive results
-    print(f"\n📊 COMPREHENSIVE MODEL RESULTS")
+    print(f"\n" + "=" * 70)
+    print(f"📊 SPLIT SELECTION RESULTS (Sorted by Validation F1)")
     print("=" * 70)
-    print(f"{'Model':<20} {'Accuracy':<10} {'F1-Weighted':<12} {'F1-Macro':<10} {'CV Score':<10}")
+    
+    display_cols = ['split', 'chosen_model', 'cv_f1w', 'val_f1w', 'val_acc', 'test_f1w', 'test_acc']
+    print(df_summary[display_cols].to_string(index=False))
+    
+    # Save results to CSV
+    df_summary.to_csv('split_selection_results.csv', index=False)
+    print(f"\n✅ Split selection results saved to: split_selection_results.csv")
+    
+    # Select best split by validation performance
+    top = df_summary.iloc[0]
+    print(f"\n🏆 SELECTED SPLIT: {top['split']} with model {top['chosen_model']}")
+    print(f"   Validation F1: {top['val_f1w']:.3f}, Validation Accuracy: {top['val_acc']:.3f}")
+    print(f"   Test F1: {top['test_f1w']:.3f}, Test Accuracy: {top['test_acc']:.3f}")
+    
+    # Extract best model and test data for downstream analysis
+    best_model_name = top['chosen_model']
+    best_model_obj = top['best_estimator']
+    best_predictions = top['test_predictions']
+    test_data = top['test_data']
+    
+    # Store results for compatibility with existing code
+    results = {best_model_name: {
+        'accuracy': top['test_acc'],
+        'f1_weighted': top['test_f1w'],
+        'cv_score': top['cv_f1w'],
+        'predictions': best_predictions,
+        'best_params': top['best_params']
+    }}
+    
+    best_models = {best_model_name: best_model_obj}
+    
+    # Step 5: Display comprehensive results for selected model
+    print(f"\n📊 COMPREHENSIVE MODEL RESULTS (Selected Split)")
+    print("=" * 70)
+    print(f"{'Model':<20} {'Accuracy':<10} {'F1-Weighted':<12} {'CV Score':<10}")
     print("-" * 70)
     
-    # Sort by accuracy for display
-    sorted_results = sorted(results.items(), key=lambda x: x[1]['accuracy'], reverse=True)
-    
-    for name, metrics in sorted_results:
+    # Display results for the selected model
+    for name, metrics in results.items():
         cv_display = f"{metrics['cv_score']:.3f}" if metrics['cv_score'] != 'N/A' else 'N/A'
-        print(f"{name:<20} {metrics['accuracy']:<10.3f} {metrics['f1_weighted']:<12.3f} {metrics['f1_macro']:<10.3f} {cv_display:<10}")
+        print(f"{name:<20} {metrics['accuracy']:<10.3f} {metrics['f1_weighted']:<12.3f} {cv_display:<10}")
     
-    # Step 8: Detailed analysis of best model
-    best_model_name = sorted_results[0][0]
-    best_metrics = sorted_results[0][1]
+    # Step 6: Detailed analysis of best model
+    best_model_name = list(results.keys())[0]
+    best_metrics = results[best_model_name]
     best_predictions = best_metrics['predictions']
     
     print(f"\n🏆 BEST MODEL: {best_model_name}")
@@ -274,7 +308,8 @@ def simplified_model_test():
     
     print(f"\n📈 Detailed Performance:")
     
-    # Classification report
+    # Classification report - use test_data from the selected split
+    y_test = test_data['target_next_day'].values
     report = classification_report(y_test, best_predictions, 
                                  target_names=['Down', 'Up'], 
                                  output_dict=True)
@@ -354,35 +389,53 @@ def simplified_model_test():
     print(f"-" * 60)
     
     try:
-        # Get train/test features as numpy arrays
-        X_train_raw = train_data[feature_names].values
-        X_test_raw = test_data[feature_names].values
+        # Get train/test features as numpy arrays - use the selected split data
+        # We need to get the training data from the selected split
+        selected_split_idx = None
+        for i, ratios in enumerate(SPLITS):
+            if f"{ratios[0]*100:.0f}/{ratios[1]*100:.0f}/{ratios[2]*100:.0f}" == top['split']:
+                selected_split_idx = i
+                break
+        
+        if selected_split_idx is not None:
+            # Recreate the selected split for SHAP analysis
+            X_tr, y_tr, X_va, y_va, X_te, y_te, _ = chrono_slices(df, feature_cols, SPLITS[selected_split_idx])
+            X_train_raw = pd.concat([X_tr, X_va])[feature_names].values  # Use train+val for background
+            X_test_raw = X_te[feature_names].values
+        else:
+            # Fallback: use the test data we already have
+            X_test_raw = test_data[feature_names].values
+            # For background, we'll use a subset of the test data
+            X_train_raw = X_test_raw[:100]  # Use first 100 test samples as background
         
         print(f"🔄 Computing SHAP values for {best_model_name}...")
         
-        # Handle pipeline models - extract the actual SVM and apply scaling
+        # Handle pipeline models - extract the actual model and apply scaling if needed
         if hasattr(best_model_obj, 'named_steps') and 'model' in best_model_obj.named_steps:
-            # Extract the raw SVM model and scaler
-            scaler = best_model_obj.named_steps['scaler']
-            svm_model = best_model_obj.named_steps['model']
-            
-            # Apply scaling to data
-            X_train = scaler.transform(X_train_raw)
-            X_test = scaler.transform(X_test_raw)
-            
-            # Use random sample of training data as background
-            np.random.seed(42)  # For reproducible results
-            background_indices = np.random.choice(len(X_train), size=100, replace=False)
-            background_sample = X_train[background_indices]
-            explainer = shap.KernelExplainer(svm_model.predict_proba, background_sample)
+            # Extract the model and scaler if it exists
+            if 'scaler' in best_model_obj.named_steps:
+                scaler = best_model_obj.named_steps['scaler']
+                model = best_model_obj.named_steps['model']
+                
+                # Apply scaling to data
+                X_train = scaler.transform(X_train_raw)
+                X_test = scaler.transform(X_test_raw)
+            else:
+                # No scaler, use model directly
+                model = best_model_obj.named_steps['model']
+                X_train = X_train_raw
+                X_test = X_test_raw
         else:
             # For non-pipeline models
+            model = best_model_obj
             X_train = X_train_raw
             X_test = X_test_raw
-            np.random.seed(42)  # For reproducible results
-            background_indices = np.random.choice(len(X_train), size=100, replace=False)
-            background_sample = X_train[background_indices]
-            explainer = shap.KernelExplainer(best_model_obj.predict_proba, background_sample)
+        
+        # Use random sample of training data as background
+        np.random.seed(42)  # For reproducible results
+        background_indices = np.random.choice(len(X_train), size=100, replace=False)
+        background_sample = X_train[background_indices]
+        explainer = shap.KernelExplainer(model.predict_proba, background_sample)
         
         # Get SHAP values for test sample
         test_sample = X_test[:10]  # First 10 test samples
@@ -435,7 +488,7 @@ def simplified_model_test():
         else:
             print(f"⚠️  No feature importance analysis available for this model type")
     
-    # UP Bias Analysis
+    # Step 7: UP Bias Analysis
     print(f"\n" + "=" * 70)
     print(f"🎯 UP BIAS ANALYSIS")
     print(f"=" * 70)
@@ -488,22 +541,48 @@ def simplified_model_test():
         print(f"  ✅ BALANCED: Model predictions align with market distribution")
         print(f"      UP performance reflects genuine predictive skill")
     
-    # Step 9: Simple Trading Simulation
+    # Step 8: Simple Trading Simulation
     print(f"\n" + "=" * 70)
     print(f"💰 SIMPLE TRADING SIMULATION")
     print(f"=" * 70)
     
-    # Get test data for simulation
-    test_dates = test_data['date'].values
-    test_actual_returns = test_data['sol_actual_next_day_return'].values / 100  # Convert % to decimal
-    test_actual_targets = test_data['target_next_day'].values  # Actual -1/1 classifications
+    # Get test data for simulation - need to get the original dataframe data for the test period
+    # Find the selected split and get the test period data from the original dataframe
+    selected_split_idx = None
+    for i, ratios in enumerate(SPLITS):
+        if f"{ratios[0]*100:.0f}/{ratios[1]*100:.0f}/{ratios[2]*100:.0f}" == top['split']:
+            selected_split_idx = i
+            break
+    
+    if selected_split_idx is not None:
+        # Recreate the selected split to get the test period from original dataframe
+        _, _, _, _, _, _, periods = chrono_slices(df, feature_cols, SPLITS[selected_split_idx])
+        test_start_date = periods['test_period'][0]
+        test_end_date = periods['test_period'][1]
+        
+        # Get test period data from original dataframe
+        test_mask = (df['date'].dt.date >= test_start_date) & (df['date'].dt.date <= test_end_date)
+        test_period_data = df[test_mask].copy()
+        
+        test_dates = test_period_data['date'].values
+        test_actual_returns = test_period_data['sol_actual_next_day_return'].values / 100  # Convert % to decimal
+        test_actual_targets = test_period_data['target_next_day'].values  # Actual -1/1 classifications
+    else:
+        # Fallback: use the test_data we have
+        test_dates = test_data.index.values  # Use index as dates
+        test_actual_returns = np.zeros(len(test_data))  # Placeholder
+        test_actual_targets = test_data['target_next_day'].values
+    
     best_predictions = best_metrics['predictions']
     
     # Transaction cost parameters
     transaction_cost_per_trade = 0.002 if ENABLE_TRANSACTION_COSTS else 0.0  # 0.2% per round trip (0.1% buy + 0.1% sell)
     
     print(f"📊 Simulation Setup:")
-    print(f"  Period: {test_data['date'].min().date()} to {test_data['date'].max().date()}")
+    if selected_split_idx is not None:
+        print(f"  Period: {test_start_date} to {test_end_date}")
+    else:
+        print(f"  Period: Test period from selected split")
     print(f"  Trading days: {len(test_dates)}")
     print(f"  Initial capital: $10,000")
     print(f"  Strategy: Long when predict UP (+1), Short when predict DOWN (-1)")
@@ -654,7 +733,7 @@ def simplified_model_test():
     
     print(f"\n🎉 Trading simulation completed!")
     
-    # Step 10: Long-Only Strategy Variant
+    # Step 9: Long-Only Strategy Variant
     print(f"\n" + "=" * 70)
     print(f"📈 LONG-ONLY STRATEGY SIMULATION")
     print(f"=" * 70)
