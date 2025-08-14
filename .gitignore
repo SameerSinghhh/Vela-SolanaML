@@ -1,1 +1,5 @@
+# Environment variables
 .env
+
+# Policy cache (generated policies)
+policy_cache/
