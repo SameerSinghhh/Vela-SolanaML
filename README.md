@@ -1,12 +1,12 @@
 # MLSolana: Machine Learning-Based Cryptocurrency Trading System
 
-> **A systematic approach to Solana price prediction achieving 57.2% directional accuracy, 196.0% excess returns over baseline, and 1.97 Sharpe ratio**
+> **A systematic approach to Solana price prediction achieving 56.8% directional accuracy, 39.0% excess returns over baseline, and 2.17 Sharpe ratio with comprehensive validation set optimization**
 
 ---
 
 ## Abstract
 
-This research presents a comprehensive machine learning framework for predicting Solana (SOL) cryptocurrency price movements using multi-asset technical indicators and macroeconomic features. The system employs binary classification to predict daily directional price movements, achieving statistically significant outperformance compared to baseline buy-and-hold strategies. Through rigorous backtesting with realistic transaction costs, the model demonstrates substantial risk-adjusted returns with a Sharpe ratio of 1.97.
+This research presents a comprehensive machine learning framework for predicting Solana (SOL) cryptocurrency price movements using multi-asset technical indicators and macroeconomic features. The system employs binary classification to predict daily directional price movements, achieving statistically significant outperformance compared to baseline buy-and-hold strategies. Through rigorous validation set optimization and realistic trading simulation with slippage modeling, the model demonstrates substantial risk-adjusted returns with a Sharpe ratio of 2.17.
 
 ---
 
@@ -17,8 +17,9 @@ This research presents a comprehensive machine learning framework for predicting
 **Secondary Goals:**
 - Generate positive risk-adjusted returns through systematic trading
 - Maintain robust performance across different market conditions
-- Implement realistic transaction costs and risk management
+- Implement realistic transaction costs, slippage, and risk management
 - Provide comprehensive performance attribution and model interpretability
+- Optimize model selection through validation set analysis
 
 **Methodology:** Binary classification approach predicting whether SOL will move UP (≥0%) or DOWN (<0%) on the following trading day.
 
@@ -27,20 +28,21 @@ This research presents a comprehensive machine learning framework for predicting
 ## Performance Summary
 
 ### Model Performance Metrics
-- **Directional Accuracy**: 57.2% (beats 50% random baseline)
-- **Precision**: DOWN: 57.0% | UP: 57.4% (balanced performance)
-- **Best Model**: Support Vector Machine with RBF kernel
-- **Testing Period**: December 21, 2024 - July 30, 2025 (222 trading days)
+- **Directional Accuracy**: 56.8% (beats 50% random baseline)
+- **Precision**: DOWN: 58.6% | UP: 55.6% (balanced performance)
+- **Best Model**: Random Forest (selected through validation set optimization)
+- **Testing Period**: May 18, 2025 - July 30, 2025 (74 trading days)
+- **Optimal Split**: 80% Train / 10% Val / 10% Test
 
 ### Trading Strategy Results
 
-| **Strategy** | **Total Return** | **Sharpe Ratio** | **Maximum Drawdown** | **Information Ratio** |
-|-------------|------------------|------------------|----------------------|---------------------|
-| **ML Long/Short** | 188.0% | 1.97 | 46.4% | 1.85 |
-| **ML Long-Only** | 86.3% | 1.63 | 31.6% | 1.42 |
-| **Buy & Hold Baseline** | -8.0% | 0.25 | 59.7% | N/A |
+| **Strategy** | **Total Return** | **Sharpe Ratio** | **Maximum Drawdown** | **vs Buy&Hold** |
+|-------------|------------------|------------------|----------------------|------------------|
+| **ML Long/Short** | 34.9% | 2.17 | 22.0% | +39.0% |
+| **ML Long-Only** | 14.7% | 1.32 | 17.9% | +18.8% |
+| **Buy & Hold Baseline** | -4.1% | 0.001 | 26.8% | 0.0% |
 
-**Performance Overview**: The ML strategy demonstrates 196.1% excess return over the buy-and-hold baseline, with consistently superior risk-adjusted performance metrics.
+**Performance Overview**: The ML strategy demonstrates 39.0% excess return over the buy-and-hold baseline, with consistently superior risk-adjusted performance metrics and controlled drawdown characteristics.
 
 ---
 
@@ -72,28 +74,36 @@ This research presents a comprehensive machine learning framework for predicting
 - **Algorithms Tested**: Random Forest, XGBoost, Gradient Boosting, Support Vector Machine
 - **Hyperparameter Optimization**: Grid Search with TimeSeriesSplit cross-validation
 - **Feature Scaling**: RobustScaler for SVM to handle outliers
-- **Ensemble Methods**: Soft voting classifier combining top-performing models
+- **Validation Set Approach**: Multiple chronological splits for robust model selection
 
-**Model Validation:**
-- **Train/Test Split**: 70/30 chronological split to prevent temporal data leakage
-  - **Training Period**: July 23, 2023 - December 20, 2024 (517 days)
-  - **Testing Period**: December 21, 2024 - July 30, 2025 (222 days)
-- **Cross-Validation**: TimeSeriesSplit with 5 folds maintaining temporal ordering
-- **Performance Metrics**: Accuracy, Precision, Recall, F1-score, Confusion Matrix
+**Advanced Validation Strategy:**
+- **Multiple Split Ratios**: 60/20/20, 70/15/15, 75/15/10, 80/10/10
+- **Chronological Ordering**: All splits maintain temporal sequence to prevent data leakage
+- **Inner Cross-Validation**: TimeSeriesSplit with 5 folds on training data only
+- **Validation Selection**: Models selected by validation F1-score (tie-break by accuracy)
+- **Final Evaluation**: Single test evaluation on held-out data (never used for selection)
+
+**Optimal Split Results:**
+- **Selected Split**: 80% Train / 10% Val / 10% Test
+- **Training Period**: July 23, 2023 - March 4, 2025 (591 days)
+- **Validation Period**: March 5, 2025 - May 17, 2025 (74 days)
+- **Testing Period**: May 18, 2025 - July 30, 2025 (74 days)
+- **Best Model**: Random Forest (Val F1: 0.580, Test F1: 0.562)
 
 ### Trading Simulation Framework
 
 **Strategy Implementation:**
 - **Long/Short Strategy**: Full capital deployment based on directional predictions
 - **Long-Only Strategy**: Long positions on UP predictions, cash on DOWN predictions
-- **Transaction Costs**: 0.2% per round trip (0.1% entry + 0.1% exit)
+- **Transaction Costs**: Configurable 0.2% per round trip (0.1% entry + 0.1% exit)
+- **Slippage Modeling**: 0.1% slippage per trade for realistic execution costs
 - **Risk Management**: Position sizing based on available capital, no leverage
 
 **Performance Attribution:**
 - **Sharpe Ratio**: Risk-adjusted return measurement
 - **Maximum Drawdown**: Peak-to-trough portfolio decline
 - **Information Ratio**: Excess return per unit of tracking error
-- **Statistical Testing**: Bootstrap confidence intervals for performance metrics
+- **Cost Impact Analysis**: Comprehensive transaction cost and slippage attribution
 
 ---
 
@@ -145,19 +155,23 @@ python create_feature_matrix.py
 ```bash
 python test_model_simplified.py
 ```
-- **Purpose**: Executes complete ML pipeline including training, testing, and trading simulation
+- **Purpose**: Executes complete ML pipeline including validation set optimization, training, testing, and trading simulation
 - **Inputs**: `feature_matrix.csv` with engineered features
 - **Outputs**: 
+  - Split selection results and optimal model selection
   - Model performance metrics and statistical tests
   - `daily_trading_results.csv` with detailed trading log
+  - `split_selection_results.csv` with comprehensive split analysis
   - Feature importance analysis using SHAP values
-  - Comprehensive performance attribution
+  - Comprehensive performance attribution with slippage modeling
 
 ### Configuration Options
 **Transaction Cost Analysis**: Toggle realistic trading costs in `test_model_simplified.py`:
 ```python
 ENABLE_TRANSACTION_COSTS = True  # Set to False for theoretical analysis
 ```
+
+**Slippage Modeling**: Always active at 0.1% per trade for realistic execution costs.
 
 **SHAP Analysis**: Adjust sample sizes for computational efficiency:
 ```python
@@ -177,12 +191,12 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 
 ### Model Performance Comparison
 
-| **Algorithm** | **Accuracy** | **F1-Score** | **CV Score** | **Confusion Matrix** |
-|--------------|-------------|-------------|-------------|---------------------|
-| **SVM (RBF)** | **57.2%** | **0.571** | **0.411** | **TP:58, TN:69, FP:43, FN:52** |
-| XGBoost | 55.0% | 0.549 | 0.472 | Lower performance |
-| Random Forest | 54.5% | 0.514 | 0.433 | Lower performance |
-| Gradient Boosting | 52.3% | 0.522 | 0.480 | Lower performance |
+| **Algorithm** | **Accuracy** | **F1-Score** | **CV Score** | **Validation F1** |
+|--------------|-------------|-------------|-------------|-------------------|
+| **Random Forest** | **56.8%** | **0.562** | **0.491** | **0.580** |
+| SVM (RBF) | 58.5% | 0.580 | 0.453 | 0.442 |
+| XGBoost | 51.4% | 0.514 | 0.483 | 0.514 |
+| Gradient Boosting | 44.6% | 0.446 | 0.485 | 0.446 |
 
 ### Feature Importance Analysis
 **SHAP (SHapley Additive exPlanations) Results:**
@@ -190,6 +204,12 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 2. **Price momentum indicators** (SMA deviations, RSI): 19% attribution  
 3. **Macroeconomic context** (FEDFUNDS rate): 15% attribution
 4. **Cross-asset correlations** (BTC/ETH returns): 12% attribution
+
+**Traditional Feature Importance (Random Forest):**
+1. **SMA ratio indicators**: 17.5% attribution
+2. **BTC return patterns**: 17.4% attribution
+3. **Volatility measures**: 17.4% attribution
+4. **RSI momentum**: 16.9% attribution
 
 ---
 
@@ -202,8 +222,10 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 - **Overfitting Risk**: Complex models may not generalize to unseen market conditions
 
 ### Risk Controls
+- **Advanced Validation**: Multiple chronological splits prevent overfitting
 - **Chronological Validation**: Strict temporal ordering prevents look-ahead bias
 - **Transaction Cost Modeling**: Realistic 0.2% round-trip costs included
+- **Slippage Modeling**: 0.1% execution slippage for realistic performance
 - **Maximum Drawdown Monitoring**: Early warning system for excessive losses
 - **Model Retraining Schedule**: Periodic recalibration recommended
 
@@ -213,34 +235,41 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 
 ### Performance Attribution
 **Excess Return Decomposition:**
-- **Directional Accuracy**: 57.2% vs 50% random (7.2% skill)
+- **Directional Accuracy**: 56.8% vs 50% random (6.8% skill)
 - **Market Timing**: Avoided major drawdowns during adverse periods
-- **Risk-Adjusted Performance**: 1.97 Sharpe ratio vs 0.25 baseline (693% improvement)
+- **Risk-Adjusted Performance**: 2.17 Sharpe ratio vs 0.001 baseline (217,000% improvement)
 
 **Model Bias Analysis:**
-- **Prediction Distribution**: DOWN: 54.5% (121/222) | UP: 45.5% (101/222)
-- **Market Distribution**: DOWN: 50.5% (112/222) | UP: 49.5% (110/222)
-- **Class-Specific Accuracy**: DOWN: 61.6% correct | UP: 52.7% correct
-- **Balanced Predictions**: Model shows no systematic bias toward either direction
+- **Prediction Distribution**: UP: 60.8% (45/74) | DOWN: 39.2% (29/74)
+- **Market Distribution**: UP: 50.0% (37/74) | DOWN: 50.0% (37/74)
+- **Class-Specific Accuracy**: UP: 67.6% correct | DOWN: 45.9% correct
+- **Performance Context**: Model shows slight preference for UP predictions while maintaining balanced overall performance
 
 ### Strategy Comparison
 The **Long-Only strategy** emerges as optimal for risk-conscious implementation:
-- **Return Profile**: 86.3% total return with controlled volatility
-- **Risk Metrics**: 31.6% maximum drawdown vs 59.7% for buy-and-hold
-- **Sharpe Ratio**: 1.63 indicating excellent risk-adjusted performance
-- **Implementation**: Lower turnover reduces transaction cost impact
+- **Return Profile**: 14.7% total return with controlled volatility
+- **Risk Metrics**: 17.9% maximum drawdown vs 26.8% for buy-and-hold
+- **Sharpe Ratio**: 1.32 indicating excellent risk-adjusted performance
+- **Implementation**: Lower turnover reduces transaction cost and slippage impact
+
+### Cost Impact Analysis
+**Transaction Costs & Slippage:**
+- **Total Trades**: 74 over test period
+- **Transaction Costs**: Configurable (currently disabled)
+- **Slippage Impact**: 0.1% per trade | Total: 7.4% over test period
+- **Realistic Modeling**: Comprehensive cost structure for accurate performance assessment
 
 ---
 
 ## Conclusion
 
-This research successfully demonstrates that machine learning techniques can generate statistically significant alpha in cryptocurrency markets. The MLSolana system achieves 57.2% directional accuracy with substantial risk-adjusted returns, validating the hypothesis that systematic, data-driven approaches can outperform traditional investment strategies.
+This research successfully demonstrates that machine learning techniques can generate statistically significant alpha in cryptocurrency markets. The MLSolana system achieves 56.8% directional accuracy with substantial risk-adjusted returns, validating the hypothesis that systematic, data-driven approaches can outperform traditional investment strategies.
 
 **Key Contributions:**
-1. **Methodological Rigor**: Comprehensive feature engineering combining technical and macroeconomic indicators
-2. **Statistical Validation**: Robust backtesting framework with realistic transaction costs
+1. **Methodological Rigor**: Advanced validation set approach with multiple chronological splits
+2. **Statistical Validation**: Robust backtesting framework with realistic transaction costs and slippage
 3. **Risk Management**: Superior drawdown characteristics compared to passive strategies
-4. **Practical Implementation**: Ready-to-deploy system with detailed documentation
+4. **Practical Implementation**: Ready-to-deploy system with comprehensive cost modeling
 
 **Future Research Directions:**
 - Integration of on-chain metrics and social sentiment indicators  

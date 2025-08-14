@@ -575,8 +575,9 @@ def simplified_model_test():
     
     best_predictions = best_metrics['predictions']
     
-    # Transaction cost parameters
+    # Transaction cost and slippage parameters
     transaction_cost_per_trade = 0.002 if ENABLE_TRANSACTION_COSTS else 0.0  # 0.2% per round trip (0.1% buy + 0.1% sell)
+    slippage_per_trade = 0.001  # 0.1% slippage per trade
     
     print(f"📊 Simulation Setup:")
     if selected_split_idx is not None:
@@ -590,6 +591,7 @@ def simplified_model_test():
         print(f"  Transaction costs: {transaction_cost_per_trade*100:.1f}% per round trip (0.1% buy + 0.1% sell)")
     else:
         print(f"  Transaction costs: DISABLED (0.0%)")
+    print(f"  Slippage: {slippage_per_trade*100:.1f}% per trade")
     print()
     
     # Initialize simulation
@@ -622,8 +624,11 @@ def simplified_model_test():
         else:  # Predicted DOWN - go short  
             strategy_return = -actual_return  # Gain when market down, lose when market up
         
-        # Apply transaction costs to ML strategy (0.2% per day for round trip)
-        strategy_return_after_costs = strategy_return - transaction_cost_per_trade
+        # Apply transaction costs and slippage to ML strategy
+        # Transaction costs: 0.2% per day for round trip (if enabled)
+        # Slippage: 0.1% per trade (always applied)
+        total_costs = transaction_cost_per_trade + slippage_per_trade
+        strategy_return_after_costs = strategy_return - total_costs
         
         # Update portfolios
         ml_capital_before = ml_capital
@@ -755,12 +760,13 @@ def simplified_model_test():
         if prediction == 1:  # Predicted UP - go long
             position = "LONG"
             strategy_return = actual_return  # Gain/lose with market
-            # Apply transaction costs for long position (0.2% round trip)
-            strategy_return_after_costs = strategy_return - transaction_cost_per_trade
+            # Apply transaction costs and slippage for long position
+            total_costs = transaction_cost_per_trade + slippage_per_trade
+            strategy_return_after_costs = strategy_return - total_costs
         else:  # Predicted DOWN - stay in cash
             position = "CASH"
             strategy_return = 0.0  # Cash earns nothing
-            strategy_return_after_costs = 0.0  # No transaction cost for cash
+            strategy_return_after_costs = 0.0  # No transaction cost or slippage for cash
         
         # Update long-only portfolio
         long_only_capital_before = long_only_capital
@@ -895,14 +901,22 @@ def simplified_model_test():
     print(f"  ML Strategy: {ml_rating} ({ml_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}, +{sharpe_diff_ml:.3f})")
     print(f"  Long-Only: {lo_rating} ({long_only_sharpe_annual:.3f} vs {buy_hold_sharpe_annual:.3f}, +{sharpe_diff_lo:.3f})")
     
-    # Transaction Cost Impact
+    # Transaction Cost and Slippage Impact
     total_trades = len([d for d in detailed_log if d['prediction'] != 0])
-    print(f"\n💸 TRANSACTION COST IMPACT:")
+    print(f"\n💸 TRANSACTION COST & SLIPPAGE IMPACT:")
     if ENABLE_TRANSACTION_COSTS:
         total_cost_pct = total_trades * transaction_cost_per_trade * 100
-        print(f"  Total trades: {total_trades} | Cost per trade: {transaction_cost_per_trade*100:.1f}% | Total cost: {total_cost_pct:.1f}%")
+        total_slippage_pct = total_trades * slippage_per_trade * 100
+        total_impact_pct = total_cost_pct + total_slippage_pct
+        print(f"  Total trades: {total_trades}")
+        print(f"  Transaction costs: {transaction_cost_per_trade*100:.1f}% per trade | Total: {total_cost_pct:.1f}%")
+        print(f"  Slippage: {slippage_per_trade*100:.1f}% per trade | Total: {total_slippage_pct:.1f}%")
+        print(f"  Total impact: {total_impact_pct:.1f}%")
     else:
-        print(f"  Transaction costs: DISABLED (0.0%) - Running simulation without costs")
+        total_slippage_pct = total_trades * slippage_per_trade * 100
+        print(f"  Total trades: {total_trades}")
+        print(f"  Transaction costs: DISABLED (0.0%)")
+        print(f"  Slippage: {slippage_per_trade*100:.1f}% per trade | Total: {total_slippage_pct:.1f}%")
     
     print(f"\n✅ Complete trading data saved to: daily_trading_results.csv")
     print(f"🎉 Simulation completed - {len(detailed_log)} trading days analyzed")
