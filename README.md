@@ -245,13 +245,6 @@ shap_sample_size = 100  # Reduce for faster execution on large datasets
 - **Class-Specific Accuracy**: UP: 67.6% correct | DOWN: 45.9% correct
 - **Performance Context**: Model shows slight preference for UP predictions while maintaining balanced overall performance
 
-### Strategy Comparison
-The **Long-Only strategy** emerges as optimal for risk-conscious implementation:
-- **Return Profile**: 14.7% total return with controlled volatility
-- **Risk Metrics**: 17.9% maximum drawdown vs 26.8% for buy-and-hold
-- **Sharpe Ratio**: 1.32 indicating excellent risk-adjusted performance
-- **Implementation**: Lower turnover reduces transaction cost and slippage impact
-
 ### Cost Impact Analysis
 **Transaction Costs & Slippage:**
 - **Total Trades**: 74 over test period
